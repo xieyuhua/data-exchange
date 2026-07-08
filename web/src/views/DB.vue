@@ -2,7 +2,8 @@
   <div class="panel">
     <div class="panel-head"><h2>数据库连接</h2><button class="btn btn-primary" @click="openForm(null)">+ 新增连接</button></div>
     <div class="panel-body p0">
-      <table v-if="list.length"><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>主机</th><th>端口</th><th>数据库</th><th>状态</th><th>操作</th></tr></thead><tbody>
+      <div class="table-scroll" v-if="list.length">
+      <table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>主机</th><th>端口</th><th>数据库</th><th>状态</th><th>操作</th></tr></thead><tbody>
         <tr v-for="c in list" :key="c.id">
           <td>{{ c.id }}</td><td>{{ c.name }}</td><td><span class="badge" :class="'badge-'+c.db_type">{{ c.db_type }}</span></td>
           <td class="cell-mono">{{ c.host }}</td><td>{{ c.port }}</td><td class="cell-mono">{{ c.database_name }}</td>
@@ -14,6 +15,7 @@
           </td>
         </tr>
       </tbody></table>
+      </div>
       <div v-else class="empty">暂无数据库连接</div>
     </div>
 

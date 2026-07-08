@@ -1,43 +1,57 @@
 package services
 
 import (
-	"data-exchange/models"
 	"log"
 	"sync"
+
+	"data-exchange/repository"
 
 	"github.com/robfig/cron/v3"
 )
 
-var (
+// Scheduler 定时调度器，承载 cron 实例与任务入口映射
+type Scheduler struct {
 	CronScheduler *cron.Cron
-	TaskEntryMap  = make(map[int64]cron.EntryID)
+	TaskEntryMap  map[int64]cron.EntryID
+	taskRepo      *repository.SQLTaskRepo
 	mu            sync.Mutex
 	initOnce      sync.Once
-)
+}
 
-func InitScheduler() {
-	initOnce.Do(func() {
-		CronScheduler = cron.New(cron.WithSeconds())
-		CronScheduler.Start()
+// NewScheduler 构建调度器
+func NewScheduler(taskRepo *repository.SQLTaskRepo) *Scheduler {
+	return &Scheduler{
+		TaskEntryMap: make(map[int64]cron.EntryID),
+		taskRepo:     taskRepo,
+	}
+}
+
+// Init 启动 cron 并加载全部启用任务（复用 App 的并发工作池）
+func (s *Scheduler) Init(app *App) {
+	s.initOnce.Do(func() {
+		s.CronScheduler = cron.New(cron.WithSeconds())
+		s.CronScheduler.Start()
 		log.Println("[调度器] Cron调度器已启动")
-		InitWorkerPool() // 初始化并发工作池
-		LoadAllTasks()
+		SetTaskExecutor(app.Executor)
+		s.LoadAllTasks()
 	})
 }
 
-func LoadAllTasks() {
-	mu.Lock()
-	defer mu.Unlock()
+// LoadAllTasks 重新加载全部启用且配置了 cron 的任务
+func (s *Scheduler) LoadAllTasks() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	for _, entryID := range TaskEntryMap {
-		CronScheduler.Remove(entryID)
+	for _, entryID := range s.TaskEntryMap {
+		s.CronScheduler.Remove(entryID)
 	}
-	TaskEntryMap = make(map[int64]cron.EntryID)
+	s.TaskEntryMap = make(map[int64]cron.EntryID)
 
-	var tasks []models.SQLTask
-	models.DB.Preload("Vendor").
-		Where("enabled = 1 AND cron_expression != ''").
-		Find(&tasks)
+	tasks, err := s.taskRepo.LoadAllEnabled()
+	if err != nil {
+		log.Printf("[调度器] 加载任务失败: %v", err)
+		return
+	}
 
 	count := 0
 	for _, t := range tasks {
@@ -46,9 +60,8 @@ func LoadAllTasks() {
 		}
 		taskID := t.ID
 		cronExpr := t.CronExpression
-		entryID, err := CronScheduler.AddFunc(cronExpr, func() {
+		entryID, err := s.CronScheduler.AddFunc(cronExpr, func() {
 			log.Printf("[调度器] 触发定时任务 #%d，提交到工作池", taskID)
-			// 通过 worker pool 执行，自动限流
 			pool := GetGlobalPool()
 			pool.Submit(taskID)
 		})
@@ -56,23 +69,24 @@ func LoadAllTasks() {
 			log.Printf("[调度器] 添加任务 #%d 失败 (cron: %s): %v", t.ID, cronExpr, err)
 			continue
 		}
-		TaskEntryMap[t.ID] = entryID
+		s.TaskEntryMap[t.ID] = entryID
 		count++
 	}
 	log.Printf("[调度器] 已加载 %d 个定时任务", count)
 }
 
-func AddTaskToScheduler(taskID int64, cronExpr string) {
-	mu.Lock()
-	defer mu.Unlock()
+// AddTask 注册单个任务的 cron 触发
+func (s *Scheduler) AddTask(taskID int64, cronExpr string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if entryID, ok := TaskEntryMap[taskID]; ok {
-		CronScheduler.Remove(entryID)
-		delete(TaskEntryMap, taskID)
+	if entryID, ok := s.TaskEntryMap[taskID]; ok {
+		s.CronScheduler.Remove(entryID)
+		delete(s.TaskEntryMap, taskID)
 	}
 
 	tid := taskID
-	entryID, err := CronScheduler.AddFunc(cronExpr, func() {
+	entryID, err := s.CronScheduler.AddFunc(cronExpr, func() {
 		log.Printf("[调度器] 触发定时任务 #%d，提交到工作池", tid)
 		pool := GetGlobalPool()
 		pool.Submit(tid)
@@ -81,26 +95,50 @@ func AddTaskToScheduler(taskID int64, cronExpr string) {
 		log.Printf("[调度器] 添加任务 #%d 失败: %v", taskID, err)
 		return
 	}
-	TaskEntryMap[taskID] = entryID
+	s.TaskEntryMap[taskID] = entryID
 	log.Printf("[调度器] 任务 #%d 已添加 (cron: %s)", taskID, cronExpr)
 }
 
-func RemoveTaskFromScheduler(taskID int64) {
-	mu.Lock()
-	defer mu.Unlock()
+// RemoveTask 移除单个任务的 cron 触发
+func (s *Scheduler) RemoveTask(taskID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if entryID, ok := TaskEntryMap[taskID]; ok {
-		CronScheduler.Remove(entryID)
-		delete(TaskEntryMap, taskID)
+	if entryID, ok := s.TaskEntryMap[taskID]; ok {
+		s.CronScheduler.Remove(entryID)
+		delete(s.TaskEntryMap, taskID)
 		log.Printf("[调度器] 任务 #%d 已移除", taskID)
 	}
 }
 
-func StopScheduler() {
-	if CronScheduler != nil {
-		CronScheduler.Stop()
+// Stop 停止调度器与底层资源
+func (s *Scheduler) Stop() {
+	if s.CronScheduler != nil {
+		s.CronScheduler.Stop()
 		log.Println("[调度器] Cron调度器已停止")
 	}
 	StopWorkerPool()
 	CloseAllCachedDBs()
+}
+
+// ==================== App 调度封装（结构体方法，替代原包级函数） ====================
+
+// InitScheduler 初始化并启动调度器
+func (a *App) InitScheduler() {
+	a.Scheduler.Init(a)
+}
+
+// StopScheduler 停止调度器
+func (a *App) StopScheduler() {
+	a.Scheduler.Stop()
+}
+
+// AddTaskToScheduler 注册任务到调度器
+func (a *App) AddTaskToScheduler(taskID int64, cronExpr string) {
+	a.Scheduler.AddTask(taskID, cronExpr)
+}
+
+// RemoveTaskFromScheduler 从调度器移除任务
+func (a *App) RemoveTaskFromScheduler(taskID int64) {
+	a.Scheduler.RemoveTask(taskID)
 }

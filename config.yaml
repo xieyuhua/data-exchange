@@ -1,0 +1,19 @@
+# 数据交换系统 配置文件
+# 系统数据库支持 sqlite 与 mysql 两种存储方式
+
+database:
+  # 存储类型: sqlite 或 mysql
+  type: sqlite
+
+  # 当 type=sqlite 时使用的数据库文件路径
+  sqlite_path: data.db
+
+  # 当 type=mysql 时使用的连接配置
+  mysql:
+    host: 127.0.0.1
+    port: 3306
+    user: root
+    password: ""
+    database: data_exchange
+    # 连接参数，一般保持默认即可
+    params: "charset=utf8mb4&parseTime=True&loc=Local"

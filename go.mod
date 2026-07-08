@@ -5,6 +5,7 @@ go 1.21
 require (
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-sql-driver/mysql v1.7.1
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jlaffaye/ftp v0.2.0
 	github.com/lib/pq v1.10.9
 	github.com/pkg/sftp v1.13.6
@@ -12,6 +13,8 @@ require (
 	github.com/sijms/go-ora/v2 v2.8.7
 	golang.org/x/crypto v0.31.0
 	golang.org/x/text v0.21.0
+	gopkg.in/yaml.v3 v3.0.1
+	gorm.io/driver/mysql v1.5.7
 	gorm.io/driver/sqlite v1.5.5
 	gorm.io/gorm v1.25.7
 )
@@ -44,5 +47,4 @@ require (
 	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

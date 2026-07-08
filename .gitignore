@@ -2,4 +2,11 @@ backup
 static
 output
 *.exe
+*.exe*
 *.db
+*.db*
+*.log
+*.err
+data.db-shm
+data.db-wal
+*.log*  

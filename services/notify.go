@@ -23,16 +23,16 @@ const (
 	CfgNotifyAt    = "notify_at"
 )
 
-func NotifyFailure(taskName, vendorName, errMsg string) {
+func (a *App) NotifyFailure(taskName, vendorName, errMsg string) {
 	now := time.Now().Format("2006-01-02 15:04:05")
 	content := fmt.Sprintf(
 		"【数据交换任务执行失败】\n时间: %s\n厂家: %s\n任务: %s\n错误: %s",
 		now, vendorName, taskName, errMsg,
 	)
 
-	if GetConfigWithDefault(CfgDingEnabled, "off") == "on" {
-		if wb := GetConfig(CfgDingWebhook); wb != "" {
-			if err := sendDingTalk(wb, GetConfig(CfgDingSecret), content); err != nil {
+	if a.GetConfigWithDefault(CfgDingEnabled, "off") == "on" {
+		if wb := a.GetConfig(CfgDingWebhook); wb != "" {
+			if err := sendDingTalk(wb, a.GetConfig(CfgDingSecret), content); err != nil {
 				log.Printf("[通知] 钉钉发送失败: %v", err)
 			} else {
 				log.Printf("[通知] 钉钉提醒已发送 (任务: %s)", taskName)
@@ -40,9 +40,9 @@ func NotifyFailure(taskName, vendorName, errMsg string) {
 		}
 	}
 
-	if GetConfigWithDefault(CfgWxEnabled, "off") == "on" {
-		if wb := GetConfig(CfgWxWebhook); wb != "" {
-			if err := sendWeChat(wb, content, GetConfig(CfgNotifyAt)); err != nil {
+	if a.GetConfigWithDefault(CfgWxEnabled, "off") == "on" {
+		if wb := a.GetConfig(CfgWxWebhook); wb != "" {
+			if err := sendWeChat(wb, content, a.GetConfig(CfgNotifyAt)); err != nil {
 				log.Printf("[通知] 企业微信发送失败: %v", err)
 			} else {
 				log.Printf("[通知] 企业微信提醒已发送 (任务: %s)", taskName)

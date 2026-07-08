@@ -1,8 +1,25 @@
 <template>
   <div class="panel">
-    <div class="panel-head"><h2>厂家列表</h2><button class="btn btn-primary" @click="openForm(null)">+ 新增厂家</button></div>
+    <div class="panel-head"><h2>厂家列表</h2>
+      <div class="head-actions">
+        <button class="btn btn-primary" @click="openForm(null)">+ 新增厂家</button>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <div class="filter-item search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input class="filter-control" v-model="keyword" @keyup.enter="load(1)" placeholder="搜索名称 / 编码 / 描述…">
+        <button v-if="keyword" class="search-clear" @click="clearSearch" title="清除">×</button>
+      </div>
+      <button class="btn" @click="load(1)">搜索</button>
+      <div class="spacer"></div>
+      <span class="muted">共 {{ total }} 个厂家</span>
+    </div>
     <div class="panel-body p0">
-      <table v-if="list.length"><thead><tr><th>ID</th><th>名称</th><th>编码</th><th>状态</th><th>描述</th><th>操作</th></tr></thead><tbody>
+      <div class="table-scroll" v-if="list.length">
+      <table><thead><tr><th>ID</th><th>名称</th><th>编码</th><th>状态</th><th>描述</th><th>操作</th></tr></thead><tbody>
         <tr v-for="v in list" :key="v.id">
           <td>{{ v.id }}</td><td>{{ v.name }}</td><td class="cell-mono">{{ v.code }}</td>
           <td><span class="badge" :class="v.enabled?'badge-on':'badge-off'">{{ v.enabled?'启用':'停用' }}</span></td>
@@ -14,7 +31,13 @@
           </td>
         </tr>
       </tbody></table>
+      </div>
       <div v-else class="empty">暂无厂家，点击右上角新增</div>
+    </div>
+    <div class="pager" v-if="total > pageSize">
+      <button class="btn btn-sm" :disabled="page <= 1" @click="load(page - 1)">上一页</button>
+      <span class="muted">第 {{ page }} / {{ Math.ceil(total / pageSize) }} 页（共 {{ total }} 条）</span>
+      <button class="btn btn-sm" :disabled="page >= Math.ceil(total / pageSize)" @click="load(page + 1)">下一页</button>
     </div>
 
     <div v-if="showModal" class="modal-mask" @click.self="showModal=false">
@@ -37,15 +60,24 @@
 <script>
 import api from '../api'
 export default {
-  data() { return { list:[], showModal:false, editing:false, form:{id:0,name:'',code:'',description:'',enabled:1} } },
+  data() { return { list:[], total:0, page:1, pageSize:20, keyword:'', showModal:false, editing:false, form:{id:0,name:'',code:'',description:'',enabled:1} } },
   inject: ['toast'],
-  async mounted() { await this.load() },
+  async mounted() { await this.load(1) },
   methods: {
-    async load() { const r = await api.get('/vendors'); this.list = r.data },
+    async load(p) {
+      this.page = p || this.page
+      const r = await api.get('/vendors', { keyword: this.keyword, page: this.page, page_size: this.pageSize })
+      this.list = r.data || []
+      this.total = r.total || 0
+    },
     openForm(v) {
       this.editing = !!v
       this.form = v ? { ...v } : { id:0,name:'',code:'',description:'',enabled:1 }
       this.showModal = true
+    },
+    clearSearch() {
+      this.keyword = ''
+      this.load(1)
     },
     async save() {
       if (!this.form.name||!this.form.code) return this.toast('名称和编码不能为空','error')

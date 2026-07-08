@@ -1,10 +1,10 @@
 # 数据交换系统 (data-exchange)
 
-一个基于 Go + Gin + SQLite 的定时数据抽取与文件交换系统。支持按厂家配置 SQL 任务，定时执行查询并将结果导出为 CSV，可选择通过 FTP/SFTP 上传到目标服务器；任务执行失败时可通过 **钉钉机器人 / 企业微信机器人** 发送提醒。
+一个基于 Go + Gin 的定时数据抽取与文件交换系统，系统数据库支持 **SQLite / MySQL**（由 `config.yaml` 配置）。支持按厂家配置 SQL 任务，定时执行查询并将结果导出为 CSV，可选择通过 FTP/SFTP 上传到目标服务器；任务执行失败时可通过 **钉钉机器人 / 企业微信机器人** 发送提醒。
 
 ## 功能特性
 
-- **厂家管理**：维护数据提供方（厂家）基本信息，每个厂家最多配置 4 个 SQL 任务。
+- **厂家管理**：维护数据提供方（厂家）基本信息，每个厂家可配置的 SQL 任务数上限（默认 4，可在系统配置 `max_tasks_per_vendor` 中调整）。
 - **SQL 任务**：
   - 关联数据库连接、Cron 表达式定时调度。
   - 支持 SQL 常量占位符 `{{常量名}}` 替换。
@@ -20,14 +20,18 @@
 ```
 data-exchange/
 ├── main.go              # 程序入口、参数解析、优雅退出
+├── config.yaml          # 系统数据库配置（sqlite / mysql）
+├── config/              # 配置文件解析
 ├── go.mod / go.sum      # Go 模块依赖
-├── models/              # 数据模型与 SQLite 初始化
-├── services/            # 业务逻辑（连接、CSV、FTP、调度、通知）
-│   ├── services.go      # 连接/CSV/FTP/备份/任务执行
+├── models/              # 数据模型与数据库初始化（sqlite / mysql）
+├── repository/          # 数据访问层（CRUD / 分页查询）
+├── services/            # 业务逻辑（连接、CSV、FTP、调度、通知、任务执行）
+│   ├── services.go      # 连接/CSV/FTP/备份/任务执行/并发控制
 │   ├── scheduler.go     # Cron 调度器
+│   ├── crud.go          # 厂家/任务等业务 CRUD
 │   └── notify.go        # 钉钉/企业微信失败提醒
 ├── handlers/            # HTTP 路由与接口处理
-└── static/              # 前端管理界面 (index.html / css / js)
+└── web/                 # 前端管理界面源码（Vue2 + Vite，构建后输出到 static/）
 ```
 
 ## 构建与运行
@@ -47,20 +51,42 @@ go build -o data-exchange.exe .
 ### 运行
 
 ```bash
-# 默认端口 8080，数据库 data.db
+# 默认端口 7856，读取当前目录 config.yaml
 ./data-exchange.exe
-# 或指定端口与数据库路径
-./data-exchange.exe -port 8090 -db /data/app.db
+# 或指定端口与配置文件
+./data-exchange.exe -port 8090 -config /etc/data-exchange/config.yaml
 ```
 
 启动后浏览器访问：`http://localhost:<port>`
 
 ### 命令行参数
 
-| 参数     | 默认值   | 说明           |
-| -------- | -------- | -------------- |
-| `-port`  | `8080`   | HTTP 服务端口  |
-| `-db`    | `data.db`| SQLite 数据库文件路径 |
+| 参数      | 默认值        | 说明                     |
+| --------- | ------------- | ------------------------ |
+| `-port`   | `7856`        | HTTP 服务端口            |
+| `-config` | `config.yaml` | 配置文件路径（YAML）     |
+
+## 系统数据库（SQLite / MySQL）
+
+系统自身的元数据库（厂家、任务、配置、日志等）支持两种存储后端，由 `config.yaml` 的 `database` 段决定：
+
+```yaml
+database:
+  type: sqlite          # sqlite 或 mysql
+  sqlite_path: data.db  # type=sqlite 时的文件路径
+  mysql:                # type=mysql 时的连接信息
+    host: 127.0.0.1
+    port: 3306
+    user: root
+    password: ""
+    database: data_exchange
+    params: "charset=utf8mb4&parseTime=True&loc=Local"
+```
+
+- `type: sqlite`：使用本地文件（默认 `data.db`，沿用 WAL 模式）。
+- `type: mysql`：连接外部 MySQL，`params` 一般保持默认即可。
+- 配置文件不存在时使用内置默认值（sqlite + `data.db`）。
+- 首次启动会自动 `AutoMigrate` 建表并初始化默认管理员（`admin / admin2026`）与系统配置。
 
 ## 配置说明
 
@@ -76,6 +102,7 @@ go build -o data-exchange.exe .
 | `date_format`      | `20060102`    | 文件名日期格式                         |
 | `datetime_format`  | `20060102_150405` | 文件名日期时间格式                 |
 | `max_parallel_tasks`| `3`          | 最大并行任务数                         |
+| `max_tasks_per_vendor`| `4`        | 每个厂家允许的最大 SQL 任务数（可在后台调整） |
 
 ### 文件名模板占位符
 
@@ -111,12 +138,30 @@ go build -o data-exchange.exe .
 | 仪表盘     | `GET /api/dashboard/stats`          | 统计概览             |
 | 常量       | `GET/POST /api/constants` `DELETE /api/constants/:id` | 系统常量 CRUD |
 | 数据库连接 | `GET/POST /api/db-connections` 等   | 数据库连接 CRUD + 测试 |
-| 厂家       | `GET/POST /api/vendors` 等          | 厂家 CRUD            |
+| 厂家       | `GET/POST /api/vendors` 等          | 厂家 CRUD（列表支持分页） |
 | 任务       | `GET /api/vendors/:id/tasks` `POST /api/tasks` `POST /api/tasks/:id/toggle` `POST /api/tasks/:id/execute` | 任务管理/启停/执行 |
+| 任务运行状态 | `GET /api/tasks/running`           | 返回当前正在执行的任务 ID 列表（用于前端防重复点击） |
 | FTP 账号   | `GET/POST /api/ftp-accounts` 等     | FTP/SFTP 账号 CRUD   |
 | 系统配置   | `GET/POST /api/configs`             | 配置读写             |
-| 执行日志   | `GET /api/logs` `DELETE /api/logs/:id` `DELETE /api/logs` | 日志查询/删除/清空 |
-| 文件       | `GET /api/files/output` `GET /api/files/download` `GET /api/files/backup` `POST /api/files/clean-backups` | 文件列表/下载/备份/清理 |
+| 执行日志   | `GET /api/logs` `DELETE /api/logs/:id` `DELETE /api/logs` | 日志查询/删除/清空（列表支持分页） |
+| 文件       | `GET /api/files/output` `GET /api/files/download` `GET /api/files/backup` `POST /api/files/clean-backups` | 文件列表（支持分页）/下载/备份/清理 |
+
+### 分页说明
+
+厂家列表、文件列表（output / backup）、执行日志等列表接口均支持分页，请求参数：
+
+| 参数        | 默认值 | 说明                 |
+| ----------- | ------ | -------------------- |
+| `page`      | `1`    | 页码（从 1 开始）     |
+| `page_size` | `20`   | 每页条数             |
+
+响应携带 `total` 字段表示总记录数，前端据此渲染分页器。
+
+### 任务执行防重复
+
+任务执行入口会在任务开始与结束时维护一个「运行中任务集合」（`sync.Map`）：
+- 提交「立即执行」前，后端先检查 `IsTaskRunning(id)`，若正在执行则直接拒绝并返回 `任务正在执行中，请稍候`。
+- 前端通过每 3 秒轮询 `GET /api/tasks/running` 同步运行状态，「立即执行」按钮在执行中自动禁用并显示「执行中…」，实现后端拦截 + 前端禁用的双重保险。
 
 ## 部署建议
 

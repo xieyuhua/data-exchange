@@ -2,7 +2,8 @@
   <div class="panel">
     <div class="panel-head"><h2>FTP/SFTP 账号</h2><button class="btn btn-primary" @click="openForm(null)">+ 新增账号</button></div>
     <div class="panel-body p0">
-      <table v-if="list.length"><thead><tr><th>ID</th><th>名称</th><th>厂家</th><th>协议</th><th>主机</th><th>端口</th><th>路径</th><th>状态</th><th>操作</th></tr></thead><tbody>
+      <div class="table-scroll" v-if="list.length">
+      <table><thead><tr><th>ID</th><th>名称</th><th>厂家</th><th>协议</th><th>主机</th><th>端口</th><th>路径</th><th>状态</th><th>操作</th></tr></thead><tbody>
         <tr v-for="a in list" :key="a.id">
           <td>{{ a.id }}</td><td>{{ a.name }}</td><td class="muted">{{ a.vendor_name }}</td>
           <td><span class="badge" :class="'badge-'+a.protocol">{{ a.protocol }}</span></td>
@@ -14,6 +15,7 @@
           </td>
         </tr>
       </tbody></table>
+      </div>
       <div v-else class="empty">暂无FTP/SFTP账号</div>
     </div>
 
