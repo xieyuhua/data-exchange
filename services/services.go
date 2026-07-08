@@ -303,6 +303,115 @@ func GetFTPAccount(id int64) (*models.FTPAccount, error) {
 	return &a, nil
 }
 
+// TestFTPConnection 测试FTP/SFTP连通性（仅连接+登录，不传文件）
+func TestFTPConnection(acc *models.FTPAccount) error {
+	switch acc.Protocol {
+	case "sftp":
+		return testSFTPConn(acc)
+	case "ftp":
+		return testFTPConn(acc)
+	default:
+		return fmt.Errorf("不支持的协议: %s", acc.Protocol)
+	}
+}
+
+func testSFTPConn(acc *models.FTPAccount) error {
+	config := &ssh.ClientConfig{
+		User:            acc.Username,
+		Auth:            []ssh.AuthMethod{ssh.Password(acc.Password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         10 * time.Second,
+	}
+	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", acc.Host, acc.Port), config)
+	if err != nil {
+		return fmt.Errorf("SSH连接失败: %v", err)
+	}
+	defer conn.Close()
+	client, err := sftp.NewClient(conn)
+	if err != nil {
+		return fmt.Errorf("SFTP会话建立失败: %v", err)
+	}
+	defer client.Close()
+	// 尝试列目录验证路径
+	if _, err := client.ReadDir(acc.RemotePath); err != nil {
+		return fmt.Errorf("远程路径不可访问 '%s': %v", acc.RemotePath, err)
+	}
+	return nil
+}
+
+func testFTPConn(acc *models.FTPAccount) error {
+	conn, err := ftp.Dial(fmt.Sprintf("%s:%d", acc.Host, acc.Port), ftp.DialWithTimeout(10*time.Second))
+	if err != nil {
+		return fmt.Errorf("FTP连接失败: %v", err)
+	}
+	defer conn.Quit()
+	if err := conn.Login(acc.Username, acc.Password); err != nil {
+		return fmt.Errorf("FTP登录失败: %v", err)
+	}
+	// 尝试切换远程目录
+	if err := conn.ChangeDir(acc.RemotePath); err != nil {
+		return fmt.Errorf("远程路径不可访问 '%s': %v", acc.RemotePath, err)
+	}
+	return nil
+}
+
+// TestSQLExecution 测试SQL执行（仅执行并返回前几行预览）
+func TestSQLExecution(dbConnID int64, sqlContent string) ([]string, [][]string, error) {
+	dbConn, err := GetDBConnection(dbConnID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("获取数据库连接失败: %v", err)
+	}
+	db, err := connectDB(dbConn)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer db.Close()
+
+	processedSQL := ReplaceConstants(sqlContent)
+	rows, err := db.Query(processedSQL)
+	if err != nil {
+		return nil, nil, fmt.Errorf("SQL执行失败: %v", err)
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, nil, fmt.Errorf("获取列名失败: %v", err)
+	}
+
+	var data [][]string
+	values := make([]interface{}, len(columns))
+	valuePtrs := make([]interface{}, len(columns))
+	count := 0
+
+	for rows.Next() && count < 10 {
+		for i := range columns {
+			valuePtrs[i] = &values[i]
+		}
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return columns, data, fmt.Errorf("读取数据行失败: %v", err)
+		}
+		row := make([]string, len(columns))
+		for i, val := range values {
+			if val == nil {
+				row[i] = "NULL"
+			} else {
+				switch v := val.(type) {
+				case []byte:
+					row[i] = string(v)
+				case time.Time:
+					row[i] = v.Format("2006-01-02 15:04:05")
+				default:
+					row[i] = fmt.Sprintf("%v", v)
+				}
+			}
+		}
+		data = append(data, row)
+		count++
+	}
+	return columns, data, nil
+}
+
 func UploadFile(localPath string, ftpAccount *models.FTPAccount) error {
 	switch ftpAccount.Protocol {
 	case "sftp":

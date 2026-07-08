@@ -699,3 +699,49 @@ func EvalConstantFunc(c *gin.Context) {
 		fail(c, fmt.Sprintf("不支持的函数: %s，支持 now/yesterday/tomorrow/month_start/month_end", req.Name))
 	}
 }
+
+// ==================== FTP/SFTP 测试 ====================
+
+func TestFTPConnection(c *gin.Context) {
+	var acc models.FTPAccount
+	if err := c.ShouldBindJSON(&acc); err != nil {
+		fail(c, "参数错误: "+err.Error())
+		return
+	}
+	if err := services.TestFTPConnection(&acc); err != nil {
+		fail(c, "连接测试失败: "+err.Error())
+		return
+	}
+	success(c, "连接成功")
+}
+
+// ==================== SQL 测试 ====================
+
+func TestSQLExecution(c *gin.Context) {
+	var req struct {
+		DBConnectionID int64  `json:"db_connection_id"`
+		SQLContent     string `json:"sql_content"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, "参数错误: "+err.Error())
+		return
+	}
+	if req.DBConnectionID == 0 {
+		fail(c, "请先选择数据库连接")
+		return
+	}
+	if req.SQLContent == "" {
+		fail(c, "SQL内容不能为空")
+		return
+	}
+	columns, rows, err := services.TestSQLExecution(req.DBConnectionID, req.SQLContent)
+	if err != nil {
+		fail(c, "SQL测试失败: "+err.Error())
+		return
+	}
+	success(c, gin.H{
+		"columns":    columns,
+		"rows":       rows,
+		"row_count":  len(rows),
+	})
+}

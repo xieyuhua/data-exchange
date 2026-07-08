@@ -33,7 +33,10 @@
             <div class="form-row full"><label>状态</label><select v-model.number="form.enabled"><option :value="1">启用</option><option :value="0">停用</option></select></div>
           </div>
         </div>
-        <div class="modal-foot"><button class="btn" @click="showModal=false">取消</button><button class="btn btn-primary" @click="save">保存</button></div>
+        <div class="modal-foot">
+          <button class="btn" :disabled="testing" @click="testConn">{{ testing?'测试中...':'测试连接' }}</button>
+          <button class="btn" @click="showModal=false">取消</button>
+          <button class="btn btn-primary" @click="save">保存</button></div>
       </div>
     </div>
   </div>
@@ -42,7 +45,7 @@
 <script>
 import api from '../api'
 export default {
-  data() { return { list:[], vendors:[], showModal:false, editing:false, form:{ id:0,vendor_id:0,name:'',protocol:'sftp',host:'',port:22,username:'',password:'',remote_path:'/',enabled:1 } } },
+  data() { return { list:[], vendors:[], showModal:false, editing:false, testing:false, form:{ id:0,vendor_id:0,name:'',protocol:'sftp',host:'',port:22,username:'',password:'',remote_path:'/',enabled:1 } } },
   inject: ['toast'],
   async mounted() { const [ar,vr]=await Promise.all([api.get('/ftp-accounts'),api.get('/vendors')]); this.list=ar.data; this.vendors=vr.data },
   methods: {
@@ -52,6 +55,7 @@ export default {
       this.showModal=true
     },
     async save() { if(!this.form.name) return this.toast('名称不能为空','error'); const r=await api.post('/ftp-accounts',this.form); if(r.code===0){this.showModal=false;this.toast('已保存','success');this.load()}else this.toast(r.message,'error') },
+    async testConn() { this.testing=true; try{const r=await api.post('/ftp-accounts/test',this.form); if(r.code===0)this.toast('FTP/SFTP连接成功','success'); else this.toast(r.message,'error') }catch(e){this.toast('测试请求失败','error')}finally{this.testing=false} },
     async del(id) { if(!confirm('确认删除？')) return; const r=await api.del('/ftp-accounts/'+id); if(r.code===0){this.toast('已删除','success');this.load()}else this.toast(r.message,'error') },
     async load() { const r=await api.get('/ftp-accounts'); this.list=r.data }
   }

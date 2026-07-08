@@ -49,11 +49,13 @@ func SetupRouter() *gin.Engine {
 		api.POST("/tasks/:id/execute", ExecuteTaskNow)
 		api.POST("/tasks/execute-by-name", ExecuteTaskByName)
 		api.POST("/tasks/batch-execute", BatchExecuteTasks)
+		api.POST("/tasks/test-sql", TestSQLExecution)
 
 		// FTP账号
 		api.GET("/ftp-accounts", ListFTPAccounts)
 		api.POST("/ftp-accounts", SaveFTPAccount)
 		api.DELETE("/ftp-accounts/:id", DeleteFTPAccount)
+		api.POST("/ftp-accounts/test", TestFTPConnection)
 
 		// 系统配置
 		api.GET("/configs", ListSystemConfigs)

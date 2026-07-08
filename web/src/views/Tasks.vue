@@ -48,7 +48,17 @@
             <div class="form-row full"><label>状态</label><select v-model.number="form.enabled"><option :value="1">启用</option><option :value="0">停用</option></select></div>
           </div>
         </div>
-        <div class="modal-foot"><button class="btn" @click="showModal=false">取消</button><button class="btn btn-primary" @click="save">保存</button></div>
+        <div class="modal-foot">
+          <button class="btn" :disabled="testing" @click="testSQL">{{ testing?'执行中...':'测试SQL' }}</button>
+          <button class="btn" @click="showModal=false">取消</button>
+          <button class="btn btn-primary" @click="save">保存</button>
+        </div>
+        <div v-if="sqlResult!==null" class="sql-test-result" style="margin:12px; padding:12px; background:#f5f7fa; border-radius:8px; max-height:240px; overflow:auto">
+          <div style="margin-bottom:6px;font-size:13px;color:#666">SQL测试结果（最多10行预览）</div>
+          <div v-if="sqlResult.error" style="color:#e74c3c;font-size:13px">{{ sqlResult.error }}</div>
+          <table v-else style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th v-for="c in sqlResult.columns" :key="c" style="border:1px solid #ddd;padding:4px 6px;background:#e8ecf0;text-align:left">{{ c }}</th></tr></thead><tbody><tr v-for="(row,i) in sqlResult.rows" :key="i"><td v-for="(v,j) in row" :key="j" style="border:1px solid #eee;padding:3px 6px;white-space:nowrap">{{ v }}</td></tr></tbody></table>
+          <div v-if="sqlResult.row_count===0&&!sqlResult.error" style="color:#999;font-size:13px">查询无结果返回</div>
+        </div>
       </div>
     </div>
   </div>
@@ -57,7 +67,7 @@
 <script>
 import api from '../api'
 export default {
-  data() { return { vendors:[], tasks:[], dbs:[], ftps:[], vendorId:0, maxTasks:4, showModal:false, editing:false, form:{ id:0,vendor_id:0,task_name:'',execution_mode:'export_only',db_connection_id:null,ftp_account_id:null,cron_expression:'0 2 * * *',sort_order:0,csv_filename_template:'{vendor_code}_{task_name}_{date}.csv',sql_content:'',enabled:1 } } },
+  data() { return { vendors:[], tasks:[], dbs:[], ftps:[], vendorId:0, maxTasks:4, showModal:false, editing:false, testing:false, sqlResult:null, form:{ id:0,vendor_id:0,task_name:'',execution_mode:'export_only',db_connection_id:null,ftp_account_id:null,cron_expression:'0 2 * * *',sort_order:0,csv_filename_template:'{vendor_code}_{task_name}_{date}.csv',sql_content:'',enabled:1 } } },
   inject: ['toast'],
   async mounted() {
     const [vr,dr] = await Promise.all([api.get('/vendors'), api.get('/db-connections')])
@@ -74,13 +84,25 @@ export default {
     openForm(t) {
       this.editing = !!t
       this.form = t ? { ...t, vendor_id: this.vendorId } : { id:0,vendor_id:this.vendorId,task_name:'',execution_mode:'export_only',db_connection_id:null,ftp_account_id:null,cron_expression:'0 2 * * *',sort_order:0,csv_filename_template:'{vendor_code}_{task_name}_{date}.csv',sql_content:'',enabled:1 }
+      this.sqlResult = null
       this.showModal = true
     },
     async save() {
       if (!this.form.task_name) return this.toast('任务名称不能为空','error')
       const r = await api.post('/tasks', this.form)
-      if (r.code===0) { this.showModal=false; this.toast('已保存','success'); this.loadTasks() }
+      if (r.code===0) { this.showModal=false; this.toast('已保存','success'); this.sqlResult=null; this.loadTasks() }
       else this.toast(r.message,'error')
+    },
+    async testSQL() {
+      if (!this.form.db_connection_id) return this.toast('请先选择数据库连接','error')
+      if (!this.form.sql_content) return this.toast('SQL内容不能为空','error')
+      this.testing = true
+      try {
+        const r = await api.post('/tasks/test-sql', { db_connection_id: this.form.db_connection_id, sql_content: this.form.sql_content })
+        if (r.code===0) { this.sqlResult = { columns: r.data.columns, rows: r.data.rows, row_count: r.data.row_count, error: null }; this.toast('SQL执行成功，返回 '+r.data.row_count+' 行','success') }
+        else { this.sqlResult = { error: r.message, columns:[], rows:[], row_count:0 }; this.toast(r.message,'error') }
+      } catch (e) { this.sqlResult = { error: '请求失败', columns:[], rows:[], row_count:0 }; this.toast('测试请求失败','error') }
+      finally { this.testing = false }
     },
     async delTask(id) { if(!confirm('确认删除？')) return; const r=await api.del('/tasks/'+id); if(r.code===0){this.toast('已删除','success');this.loadTasks()}else this.toast(r.message,'error') },
     async toggleTask(id) { const r=await api.post('/tasks/'+id+'/toggle',{}); if(r.code===0){this.toast('已切换','success');this.loadTasks()}else this.toast(r.message,'error') },
