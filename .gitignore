@@ -1,0 +1,5 @@
+backup
+static
+output
+*.exe
+*.db
