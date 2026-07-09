@@ -420,11 +420,12 @@ tbody tr:hover { background: #f8fafc; }
   align-items: center;
   justify-content: center;
 }
-/* 最大化时遮罩收缩到右侧内容区(不含侧边栏与顶栏)，弹窗铺满该区域、无额外边距 */
+/* 最大化时遮罩收缩到右侧内容区(不含侧边栏与顶栏)，弹窗铺满该区域并保留左右/上下边距 */
 .sql-mask.max {
   left: 240px;
   top: 68px;
   background: rgba(15, 23, 42, .35);
+  padding: 24px 32px;
 }
 .sql-modal {
   width: 760px;
@@ -439,13 +440,13 @@ tbody tr:hover { background: #f8fafc; }
   overflow: hidden;
   resize: both;
 }
-/* 最大化：铺满右侧内容区（由 .sql-mask.max 限定范围），紧贴边缘 */
+/* 最大化：铺满右侧内容区（由 .sql-mask.max 的内边距保留左右/上下边距），不再贴边 */
 .sql-modal.max {
   width: 100%;
   height: 100%;
   max-width: none;
   max-height: none;
-  border-radius: 0;
+  border-radius: 14px;
   resize: none;
 }
 .sql-modal-head {
@@ -488,7 +489,9 @@ tbody tr:hover { background: #f8fafc; }
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text);
+  color: #e2e8f0;
+  background: #0f172a;
+  border-top: 1px solid #1e293b;
 }
 .sql-modal-empty { padding: 24px 16px; font-size: 13px; color: #94a3b8; }
 
