@@ -29,7 +29,7 @@
       <div class="table-scroll" v-if="list.length">
       <table>
         <thead><tr>
-          <th>ID</th><th>任务</th><th>厂家</th><th>状态</th><th>模式</th><th>CSV文件</th><th>记录数</th><th>耗时(ms)</th><th>错误信息</th><th>开始时间</th><th>操作</th>
+          <th>ID</th><th>任务</th><th>厂家</th><th>状态</th><th>模式</th><th>CSV文件</th><th>记录数</th><th>耗时</th><th>错误信息</th><th>开始时间</th><th>操作</th>
         </tr></thead>
         <tbody>
           <tr v-for="l in list" :key="l.id">
@@ -38,12 +38,18 @@
             <td class="muted">{{ l.vendor_name }}</td>
             <td><span class="badge" :class="l.status === 'success' ? 'badge-on' : 'badge-off'">{{ l.status }}</span></td>
             <td>{{ l.execution_mode }}</td>
-            <td class="cell-mono">{{ l.csv_filename }}</td>
+            <td class="cell-mono">
+              <span v-if="l.csv_filename">{{ l.csv_filename }}</span>
+              <span v-else class="muted">—</span>
+            </td>
             <td>{{ l.record_count }}</td>
-            <td>{{ l.duration_ms }}</td>
+            <td class="cell-mono sql-dur" @click="openSQL(l)" title="点击查看执行 SQL">{{ formatDuration(l.duration_ms) }}</td>
             <td class="muted err-cell">{{ l.error_message }}</td>
             <td class="cell-mono">{{ l.started_at }}</td>
-            <td><button class="btn btn-danger btn-sm" @click="del(l.id)">删除</button></td>
+            <td class="op-cell">
+              <button v-if="l.csv_filename" class="btn btn-primary btn-sm" @click="download(l)">下载</button>
+              <button class="btn btn-danger btn-sm" @click="del(l.id)">删除</button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -56,15 +62,32 @@
       <button class="btn btn-sm" :disabled="page >= Math.ceil(total / pageSize)" @click="load(page + 1)">下一页</button>
     </div>
     </div>
+
+    <!-- 执行 SQL 弹窗：居中、可最大化（覆盖右侧内容区）、可关闭、可缩放 -->
+    <div v-if="sqlLog" class="sql-mask" :class="{ max: sqlMax }" @click.self="closeSQL">
+      <div class="sql-modal" :class="{ max: sqlMax }">
+        <div class="sql-modal-head">
+          <span class="sql-modal-title">执行 SQL · {{ sqlLog.task_name }}</span>
+          <div class="sql-modal-actions">
+            <button class="icon-btn" @click="copySQL(sqlLog)">{{ copied ? '已复制' : '复制' }}</button>
+            <button class="icon-btn" @click="sqlMax = !sqlMax">{{ sqlMax ? '还原' : '最大化' }}</button>
+            <button class="icon-btn close" @click="closeSQL" title="关闭">&times;</button>
+          </div>
+        </div>
+        <pre v-if="sqlLog.sql_content" class="sql-modal-body">{{ sqlLog.sql_content }}</pre>
+        <div v-else class="sql-modal-empty">该任务未配置 SQL（仅上传模式）</div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
 import api from '../api'
 import SearchableSelect from '../components/SearchableSelect.vue'
+import { getPageSize } from '../configStore'
 export default {
   components: { SearchableSelect },
-  data() { return { list: [], total: 0, page: 1, pageSize: 20, statusFilter: '', keyword: '' } },
+  data() { return { list: [], total: 0, page: 1, pageSize: getPageSize(), statusFilter: '', keyword: '', sqlLog: null, sqlMax: false, copied: false } },
   computed: {
     statusOptions() {
       return [
@@ -94,6 +117,70 @@ export default {
       if (!confirm('确认清空所有日志？此操作不可恢复')) return
       const r = await api.del('/logs')
       if (r.code === 0) { this.toast('已清空', 'success'); this.load(1) } else this.toast(r.message, 'error')
+    },
+    async download(l) {
+      if (!l.csv_filename) return
+      try {
+        const resp = await api.file('/files/download', { dir: 'output', filename: l.csv_filename })
+        if (resp.status !== 200) { this.toast('下载失败', 'error'); return }
+        const blob = resp.data
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = l.csv_filename
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        this.toast('已开始下载 ' + l.csv_filename, 'success')
+      } catch (e) {
+        let msg = '下载失败'
+        if (e.response && e.response.data) {
+          // 后端以 JSON 返回错误时尝试解析
+          try {
+            const reader = new FileReader()
+            reader.onload = () => { try { this.toast(JSON.parse(reader.result).message || msg, 'error') } catch { this.toast(msg, 'error') } }
+            reader.readAsText(e.response.data)
+            return
+          } catch { /* ignore */ }
+        }
+        this.toast(msg, 'error')
+      }
+    },
+    formatDuration(ms) {
+      if (!ms || ms < 0) return '—'
+      if (ms < 1000) return ms + ' ms'
+      const s = ms / 1000
+      if (s < 60) return s.toFixed(2) + ' s'
+      const m = Math.floor(s / 60)
+      const rs = (s - m * 60).toFixed(0)
+      if (m < 60) return m + ' 分 ' + rs + ' 秒'
+      const h = Math.floor(m / 60)
+      const rm = m % 60
+      return h + ' 时 ' + rm + ' 分 ' + rs + ' 秒'
+    },
+    openSQL(l) {
+      this.sqlLog = l
+      this.sqlMax = false
+      this.copied = false
+    },
+    closeSQL() {
+      this.sqlLog = null
+      this.sqlMax = false
+    },
+    async copySQL(l) {
+      if (!l.sql_content) return
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(l.sql_content)
+        } else {
+          const ta = document.createElement('textarea')
+          ta.value = l.sql_content
+          document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+        }
+        this.copied = true
+        setTimeout(() => { this.copied = false }, 1500)
+      } catch (e) {
+        this.toast('复制失败', 'error')
+      }
     }
   }
 }

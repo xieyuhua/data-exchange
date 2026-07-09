@@ -408,8 +408,11 @@ func (e *TaskExecutor) testSQLExecution(dbConnID int64, sqlContent string, limit
 // GenerateFileName 根据模板与厂家/任务信息生成文件名
 func (a *App) GenerateFileName(template, vendorCode, taskName string) string {
 	now := time.Now()
+	yesterday := now.AddDate(0, 0, -1)
 	dateStr := now.Format(a.GetConfigWithDefault("date_format", "20060102"))
 	datetimeStr := now.Format(a.GetConfigWithDefault("datetime_format", "20060102_150405"))
+	yesterdayStr := yesterday.Format(a.GetConfigWithDefault("date_format", "20060102"))
+	yesterdayDateTimeStr := yesterday.Format(a.GetConfigWithDefault("datetime_format", "20060102_150405"))
 
 	replacer := strings.NewReplacer(
 		"{vendor_code}", vendorCode,
@@ -422,6 +425,8 @@ func (a *App) GenerateFileName(template, vendorCode, taskName string) string {
 		"{HH}", now.Format("15"),
 		"{MM}", now.Format("04"),
 		"{SS}", now.Format("05"),
+		"{yesterday}", yesterdayStr,
+		"{yesterday_datetime}", yesterdayDateTimeStr,
 	)
 	return replacer.Replace(template)
 }

@@ -17,3 +17,9 @@ database:
     database: data_exchange
     # 连接参数，一般保持默认即可
     params: "charset=utf8mb4&parseTime=True&loc=Local"
+
+# 前端静态资源目录(外部目录)。留空则使用编译期嵌入的前端资源。
+# 该目录应包含 index.html 与 assets/ (即 vite 构建产物，通常指向 static/ 目录)。
+# 也可直接指向 static 的上级目录，程序会自动探测其中的 static 子目录。
+# 也可通过命令行参数 -web-root 覆盖本配置。
+web_root: ""

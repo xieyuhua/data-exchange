@@ -244,6 +244,7 @@ h1, h2, h3 { color: var(--text); margin: 0; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 .btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 .btn-sm { padding: 6px 12px; font-size: 13px; }
+.op-cell { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
 .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 4px 12px rgba(37, 99, 235, .25); }
 .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); box-shadow: 0 6px 16px rgba(37, 99, 235, .35); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--primary); padding-left: 10px; padding-right: 10px; box-shadow: none; }
@@ -299,6 +300,7 @@ tbody tr:hover { background: #f8fafc; }
 }
 .badge-on, .badge-success { background: var(--success-bg); color: var(--success); }
 .badge-off, .badge-failed { background: var(--danger-bg); color: var(--danger); }
+.badge-info { background: #e0f2fe; color: #0369a1; }
 .badge-mysql { background: #e0f2fe; color: #0369a1; }
 .badge-postgres { background: #dcfce7; color: #15803d; }
 .badge-sqlserver { background: #fae8ff; color: #a21caf; }
@@ -375,6 +377,7 @@ tbody tr:hover { background: #f8fafc; }
 
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 22px; }
 .form-row { display: flex; flex-direction: column; gap: 7px; }
+.err-tip { color: #e5484d; font-size: 13px; margin-top: 2px; }
 .form-row.full { grid-column: 1 / -1; }
 .form-row label { font-size: 14px; color: var(--text-muted); font-weight: 500; }
 .form-row input,
@@ -400,8 +403,94 @@ tbody tr:hover { background: #f8fafc; }
 .hint { font-size: 12.5px; color: var(--text-muted); }
 
 /* ===================== 分页 / 过滤 ===================== */
+.list-toolbar { display: flex; align-items: center; gap: 12px; padding: 14px 26px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.list-toolbar .muted { margin-left: auto; }
 .pager { display: flex; align-items: center; gap: 12px; padding: 16px 26px; border-top: 1px solid var(--border); }
 .pager .info { color: var(--text-muted); font-size: 14px; }
+
+/* ===================== 日志耗时 SQL 弹窗 ===================== */
+.sql-dur { cursor: pointer; text-decoration: underline dotted var(--border-strong); }
+.sql-dur:hover { color: var(--primary); }
+.sql-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(15, 23, 42, .45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 最大化时遮罩收缩到右侧内容区(不含侧边栏与顶栏)，弹窗铺满该区域、无额外边距 */
+.sql-mask.max {
+  left: 240px;
+  top: 68px;
+  background: rgba(15, 23, 42, .35);
+}
+.sql-modal {
+  width: 760px;
+  max-width: 92vw;
+  height: min(70vh, 560px);
+  background: #fff;
+  color: var(--text);
+  border-radius: 14px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  resize: both;
+}
+/* 最大化：铺满右侧内容区（由 .sql-mask.max 限定范围），紧贴边缘 */
+.sql-modal.max {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  resize: none;
+}
+.sql-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
+  background: var(--sidebar-bg, #0f172a);
+  color: #fff;
+  flex-shrink: 0;
+}
+.sql-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sql-modal-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.icon-btn {
+  border: 1px solid rgba(255, 255, 255, .25);
+  background: transparent;
+  color: #fff;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.icon-btn:hover { background: rgba(255, 255, 255, .14); }
+.icon-btn.close { font-size: 20px; line-height: 1; padding: 1px 11px; }
+.sql-modal-body {
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  flex: 1;
+  font-family: var(--mono, monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+.sql-modal-empty { padding: 24px 16px; font-size: 13px; color: #94a3b8; }
 
 /* ===================== Toast ===================== */
 .toast {
@@ -603,6 +692,109 @@ tbody tr:hover { background: #f8fafc; }
 
 /* SQL 代码编辑器（CodeMirror） */
 .modal-lg { width: 780px; }
+.modal-wide { width: 720px; }
+.file-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.file-tools .muted { font-size: 12.5px; }
+/* 远程文件独立页：更大空间、更美观 */
+.ftp-files-head { flex-wrap: wrap; }
+.fh-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fh-left h2 { margin: 0; }
+.acc-tag { font-size: 14px; color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
+.path-bar { padding: 12px 26px; border-bottom: 1px solid var(--border); font-size: 13px; background: var(--panel-bg); }
+.path-bar .cell-mono { font-size: 12.5px; }
+.dir-ico, .file-ico { margin-right: 6px; font-size: 15px; }
+.dir-ico { color: var(--primary); }
+.file-ico { color: #94a3b8; }
+
+/* 远程文件表格优化 */
+.ftp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ftp-table thead th {
+  text-align: left;
+  padding: 12px 16px;
+  background: #f8fafc;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: .02em;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+}
+.ftp-table tbody td { padding: 11px 16px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.ftp-table tbody tr { transition: background .12s; }
+.ftp-table tbody tr:hover { background: #f1f5f9; }
+.ftp-table tbody tr.is-dir { background: var(--primary-light); }
+.ftp-table tbody tr.is-dir:hover { background: #dbeafe; }
+.ftp-table .name-cell { font-family: var(--mono, monospace); }
+.ftp-table .name-cell .fname { word-break: break-all; }
+.ftp-table .num-col { white-space: nowrap; color: var(--text-muted); }
+.ftp-table .op-col { white-space: nowrap; text-align: right; }
+.type-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.type-badge.dir { background: var(--primary-light); color: var(--primary); }
+.type-badge.file { background: #f1f5f9; color: #475569; }
+
+/* 列表工具栏（搜索/总数） */
+.list-toolbar { display: flex; align-items: center; gap: 12px; padding: 14px 26px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.list-toolbar .muted { margin-left: auto; }
+/* 远程文件搜索框 */
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 300px;
+  max-width: 60vw;
+}
+.search-box .search-ico {
+  position: absolute;
+  left: 12px;
+  font-size: 14px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search-box .search-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 30px 0 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  background: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.search-box .search-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+  z-index: 1;
+}
+.search-box .search-clear {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.search-box .search-clear:hover { background: #f1f5f9; color: var(--text); }
+.list-toolbar .btn-primary.search-go,
+.list-toolbar .btn { height: 36px; }
+.list-toolbar .btn-primary { margin-left: -1px; border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
 .sql-block { margin-top: 18px; }
 .sql-editor { margin-top: 6px; }
 .sql-editor .cm-editor {

@@ -16,3 +16,9 @@ func (r *UserRepo) GetByUsername(username string) (*models.User, error) {
 	}
 	return &u, nil
 }
+
+// UpdatePassword 更新指定用户的密码哈希
+func (r *UserRepo) UpdatePassword(username, hash string) error {
+	return models.DB.Model(&models.User{}).Where("username = ?", username).
+		Update("password", hash).Error
+}

@@ -109,6 +109,7 @@ type TaskWithNames struct {
 	models.SQLTask
 	DBConnectionName string `json:"db_connection_name"`
 	FTPAccountName   string `json:"ftp_account_name"`
+	NextRunAt        string `json:"next_run_at"`
 }
 
 // SQLTaskService SQL 任务业务
@@ -231,6 +232,10 @@ func (s *SQLTaskService) decorate(t models.SQLTask) TaskWithNames {
 			twn.FTPAccountName = fa.Name
 		}
 	}
+	// 仅对启用且配置了 cron 的任务计算下一次执行时间
+	if t.Enabled == 1 && strings.TrimSpace(t.CronExpression) != "" {
+		twn.NextRunAt = computeNextRun(t.CronExpression)
+	}
 	return twn
 }
 
@@ -251,6 +256,11 @@ type FTPAccountService struct {
 // NewFTPAccountService 构建 FTP 服务
 func NewFTPAccountService(repo *repository.FTPAccountRepo, vendorRepo *repository.VendorRepo) *FTPAccountService {
 	return &FTPAccountService{repo: repo, vendorRepo: vendorRepo}
+}
+
+// Get 按 ID 获取 FTP 账号
+func (s *FTPAccountService) Get(id int64) (*models.FTPAccount, error) {
+	return s.repo.Get(id)
 }
 
 // List 列出 FTP 账号（填充厂家名）
@@ -327,6 +337,7 @@ type LogWithNames struct {
 	models.ExportLog
 	TaskName   string `json:"task_name"`
 	VendorName string `json:"vendor_name"`
+	SQLContent string `json:"sql_content"`
 }
 
 // ExportLogService 执行日志业务
@@ -371,6 +382,7 @@ func (s *ExportLogService) decorate(l models.ExportLog) LogWithNames {
 	lwn := LogWithNames{ExportLog: l}
 	if t, err := s.taskRepo.Get(l.TaskID); err == nil {
 		lwn.TaskName = t.TaskName
+		lwn.SQLContent = t.SQLContent
 	}
 	if v, err := s.vendorRepo.Get(l.VendorID); err == nil {
 		lwn.VendorName = v.Name
@@ -405,7 +417,7 @@ func (s *DashboardService) Stats() (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	var recent []LogWithNames
+	recent := make([]LogWithNames, 0)
 	for _, l := range recentLogs {
 		recent = append(recent, s.decorateLog(l))
 	}

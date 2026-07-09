@@ -34,6 +34,7 @@
 
 <script>
 import api from '../api'
+import { refreshPageSize } from '../configStore'
 export default {
   data() { return { list:[], showModal:false, editing:false, form:{id:0,config_key:'',config_value:'',description:''} } },
   inject: ['toast'],
@@ -44,7 +45,7 @@ export default {
     async save() {
       if(!this.form.config_key) return this.toast('键名不能为空','error')
       const r=await api.post('/configs',{ id:this.form.id, config_key:this.form.config_key, config_value:this.form.config_value, description:this.form.description })
-      if(r.code===0){ this.showModal=false; this.toast('已保存','success'); this.load() } else this.toast(r.message,'error')
+      if(r.code===0){ this.showModal=false; this.toast('已保存','success'); this.load(); refreshPageSize() } else this.toast(r.message,'error')
     }
   }
 }

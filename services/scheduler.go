@@ -1,8 +1,11 @@
 package services
 
 import (
+	"fmt"
 	"log"
+	"strings"
 	"sync"
+	"time"
 
 	"data-exchange/repository"
 
@@ -29,7 +32,8 @@ func NewScheduler(taskRepo *repository.SQLTaskRepo) *Scheduler {
 // Init 启动 cron 并加载全部启用任务（复用 App 的并发工作池）
 func (s *Scheduler) Init(app *App) {
 	s.initOnce.Do(func() {
-		s.CronScheduler = cron.New(cron.WithSeconds())
+		// 使用标准 5 段 cron（分 时 日 月 周），与任务表单默认表达式一致
+		s.CronScheduler = cron.New()
 		s.CronScheduler.Start()
 		log.Println("[调度器] Cron调度器已启动")
 		SetTaskExecutor(app.Executor)
@@ -141,4 +145,40 @@ func (a *App) AddTaskToScheduler(taskID int64, cronExpr string) {
 // RemoveTaskFromScheduler 从调度器移除任务
 func (a *App) RemoveTaskFromScheduler(taskID int64) {
 	a.Scheduler.RemoveTask(taskID)
+}
+
+// NextRunTimes 计算 cron 表达式未来 n 次执行时间（兼容标准 5 段与含秒 6 段格式）
+// 返回格式：2006-01-02 15:04:05
+func NextRunTimes(expr string, n int) ([]string, error) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return nil, fmt.Errorf("cron 表达式为空")
+	}
+	var sched cron.Schedule
+	var err error
+	// 优先按标准 5 段（分 时 日 月 周）解析
+	if sched, err = cron.ParseStandard(expr); err != nil {
+		// 回退到 6 段（含秒）格式
+		p := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+		sched, err = p.Parse(expr)
+		if err != nil {
+			return nil, err
+		}
+	}
+	times := make([]string, 0, n)
+	t := time.Now()
+	for i := 0; i < n; i++ {
+		t = sched.Next(t)
+		times = append(times, t.Format("2006-01-02 15:04:05"))
+	}
+	return times, nil
+}
+
+// computeNextRun 返回 cron 表达式的「下一次执行时间」字符串，无效或空表达式返回空串
+func computeNextRun(expr string) string {
+	times, err := NextRunTimes(expr, 1)
+	if err != nil || len(times) == 0 {
+		return ""
+	}
+	return times[0]
 }

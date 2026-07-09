@@ -118,6 +118,7 @@ func initDefaultConfigs() {
 		{"date_format", "20060102", "文件名中的日期格式"},
 		{"datetime_format", "20060102_150405", "文件名中的日期时间格式"},
 		{"max_parallel_tasks", "3", "最大并行任务数"},
+		{"page_size", "20", "列表每页显示条数（厂家/日志/文件列表），修改后对新打开的列表生效"},
 		{"notify_ding_enabled", "off", "钉钉失败提醒开关: on 开启 / off 关闭"},
 		{"notify_ding_webhook", "", "钉钉机器人 Webhook 地址 (含 access_token)"},
 		{"notify_ding_secret", "", "钉钉机器人加签密钥 (安全设置选择加签时填写，可空)"},

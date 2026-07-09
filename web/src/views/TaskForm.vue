@@ -32,7 +32,6 @@
               <option v-for="f in ftps" :key="f.id" :value="f.id">{{ f.name }}</option>
             </select>
           </div>
-          <div class="form-row"><label>Cron表达式</label><input v-model="form.cron_expression" placeholder="0 2 * * *"></div>
           <div class="form-row"><label>排序</label><input v-model.number="form.sort_order" type="number"></div>
           <div class="form-row"><label>状态</label>
             <select v-model.number="form.enabled">
@@ -40,9 +39,10 @@
               <option :value="0">停用</option>
             </select>
           </div>
+          <div class="form-row full"><label>Cron表达式</label><CronInput v-if="loaded" v-model="form.cron_expression" /></div>
           <div class="form-row full"><label>CSV文件名模板</label>
             <input v-model="form.csv_filename_template" placeholder="{vendor_code}_{task_name}_{date}.csv">
-            <div class="hint">可用：{vendor_code} {task_name} {date} {datetime} {yyyy} {mm} {dd} {HH} {MM} {SS}</div>
+            <div class="hint">可用：{vendor_code} {task_name} {date} {datetime} {yyyy} {mm} {dd} {HH} {MM} {SS} {yesterday} {yesterday_datetime}</div>
           </div>
 
           <div class="form-row full sql-block" :class="{ 'sql-fullscreen': sqlFullscreen }">
@@ -86,15 +86,17 @@
 
 <script>
 import api from '../api'
+import CronInput from '../components/CronInput.vue'
 import { EditorView, basicSetup } from 'codemirror'
 import { sql } from '@codemirror/lang-sql'
 
 export default {
+  components: { CronInput },
   data() {
     return {
       isEdit: false,
       vendors: [], dbs: [], ftps: [],
-      testing: false, exporting: false, sqlResult: null, editor: null, sqlFullscreen: false,
+      testing: false, exporting: false, sqlResult: null, editor: null, sqlFullscreen: false, loaded: false,
       form: {
         id: 0, vendor_id: 0, task_name: '', execution_mode: 'export_only',
         db_connection_id: null, ftp_account_id: null, cron_expression: '0 2 * * *',
@@ -131,6 +133,8 @@ export default {
       const qv = Number(this.$route.query.vendor)
       this.form.vendor_id = qv || this.vendors[0]?.id || 0
     }
+    // 数据齐备后再渲染 CronInput，避免异步回填覆盖用户已输入的值
+    this.loaded = true
     this.$nextTick(() => this.initEditor())
   },
   beforeDestroy() {

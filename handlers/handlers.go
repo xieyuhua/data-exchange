@@ -107,10 +107,23 @@ func (h *Handler) TestDBConnection(c *gin.Context) {
 
 // ==================== 厂家管理 ====================
 
+// resolvePageSize 解析分页大小：优先使用请求参数 page_size，缺省时取自系统配置 page_size，无效值回退到 20
+func (h *Handler) resolvePageSize(c *gin.Context) int {
+	def := h.App.GetConfigWithDefault("page_size", "20")
+	ps, err := strconv.Atoi(c.DefaultQuery("page_size", def))
+	if err != nil || ps < 1 {
+		ps, _ = strconv.Atoi(def)
+	}
+	if ps < 1 {
+		ps = 20
+	}
+	return ps
+}
+
 func (h *Handler) ListVendors(c *gin.Context) {
 	keyword := c.Query("keyword")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	pageSize := h.resolvePageSize(c)
 	list, total, err := h.App.Vendor.ListPaged(keyword, page, pageSize)
 	if err != nil {
 		fail(c, "获取厂家列表失败: "+err.Error())
@@ -221,6 +234,21 @@ func (h *Handler) ListRunningTasks(c *gin.Context) {
 	success(c, services.RunningTaskIDs())
 }
 
+// CronNextRuns 返回 cron 表达式未来 n 次执行时间（用于前端友好预览）
+func (h *Handler) CronNextRuns(c *gin.Context) {
+	expr := c.Query("expr")
+	n, _ := strconv.Atoi(c.DefaultQuery("n", "5"))
+	if n <= 0 || n > 20 {
+		n = 5
+	}
+	times, err := services.NextRunTimes(expr, n)
+	if err != nil {
+		fail(c, "cron 表达式无效: "+err.Error())
+		return
+	}
+	success(c, times)
+}
+
 func (h *Handler) ExecuteTaskByName(c *gin.Context) {
 	taskName := c.Query("task_name")
 	if taskName == "" {
@@ -295,6 +323,92 @@ func (h *Handler) TestFTPConnection(c *gin.Context) {
 	success(c, "连接成功")
 }
 
+// ListFTPRemoteFiles 列出指定 FTP/SFTP 账号远程目录文件（支持关键字过滤与分页）
+func (h *Handler) ListFTPRemoteFiles(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	acc, err := h.App.FTP.Get(id)
+	if err != nil {
+		fail(c, "账号不存在: "+err.Error())
+		return
+	}
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 500 {
+		pageSize = 20
+	}
+	result, err := h.App.ListRemoteFiles(acc, keyword, page, pageSize)
+	if err != nil {
+		fail(c, "列出远程文件失败: "+err.Error())
+		return
+	}
+	if result == nil {
+		result = &services.ListRemoteFilesResult{List: []services.RemoteFileInfo{}}
+	}
+	success(c, result)
+}
+
+// DeleteFTPRemoteFile 删除远程文件/目录
+func (h *Handler) DeleteFTPRemoteFile(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	acc, err := h.App.FTP.Get(id)
+	if err != nil {
+		fail(c, "账号不存在: "+err.Error())
+		return
+	}
+	name := c.Query("path")
+	if name == "" {
+		fail(c, "文件名不能为空")
+		return
+	}
+	if err := h.App.DeleteRemoteFile(acc, name); err != nil {
+		fail(c, "删除失败: "+err.Error())
+		return
+	}
+	success(c, nil)
+}
+
+// UploadFTPRemoteFile 上传本地文件到远程目录
+func (h *Handler) UploadFTPRemoteFile(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	acc, err := h.App.FTP.Get(id)
+	if err != nil {
+		fail(c, "账号不存在: "+err.Error())
+		return
+	}
+	file, err := c.FormFile("file")
+	if err != nil {
+		fail(c, "未找到上传文件")
+		return
+	}
+	tmp, err := os.CreateTemp("", "ftp-upload-*")
+	if err != nil {
+		fail(c, "创建临时文件失败: "+err.Error())
+		return
+	}
+	tmpPath := tmp.Name()
+	tmp.Close()
+	if err := c.SaveUploadedFile(file, tmpPath); err != nil {
+		os.Remove(tmpPath)
+		fail(c, "保存上传文件失败: "+err.Error())
+		return
+	}
+	defer os.Remove(tmpPath)
+
+	remoteName := c.PostForm("path")
+	if remoteName == "" {
+		remoteName = file.Filename
+	}
+	if err := h.App.UploadRemoteFile(acc, tmpPath, remoteName); err != nil {
+		fail(c, "上传失败: "+err.Error())
+		return
+	}
+	success(c, nil)
+}
+
 // ==================== 系统配置 ====================
 
 func (h *Handler) ListSystemConfigs(c *gin.Context) {
@@ -326,7 +440,7 @@ func (h *Handler) SaveSystemConfig(c *gin.Context) {
 
 func (h *Handler) ListExportLogs(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	pageSize := h.resolvePageSize(c)
 	status := c.Query("status")
 	keyword := c.Query("keyword")
 
@@ -421,7 +535,7 @@ func (h *Handler) ListOutputFiles(c *gin.Context) {
 		list = []FileInfo{}
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	pageSize := h.resolvePageSize(c)
 	pageList, total := paginateFiles(list, page, pageSize)
 	successWithTotal(c, pageList, total)
 }
@@ -503,7 +617,7 @@ func (h *Handler) ListBackupFiles(c *gin.Context) {
 		list = []FileInfo{}
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	pageSize := h.resolvePageSize(c)
 	pageList, total := paginateFiles(list, page, pageSize)
 	keepCount := h.App.GetConfigWithDefault("backup_keep_count", "30")
 	success(c, map[string]interface{}{

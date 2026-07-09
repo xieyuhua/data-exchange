@@ -42,8 +42,9 @@
 
 <script>
 import api from '../api'
+import { getPageSize } from '../configStore'
 export default {
-  data() { return { tab:'output', output:[], backup:[], keepCount:'30', page:1, pageSize:20, total:0 } },
+  data() { return { tab:'output', output:[], backup:[], keepCount:'30', page:1, pageSize:getPageSize(), total:0 } },
   inject: ['toast'],
   async mounted() { await this.loadOutput() },
   methods: {

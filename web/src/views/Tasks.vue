@@ -51,6 +51,8 @@
               模式：{{ t.execution_mode === 'upload' ? '导出并上传' : '仅导出' }} | 排序：{{ t.sort_order }} | Cron：{{ t.cron_expression }}<br>
               数据库连接：{{ t.db_connection_name || '未设置' }} | FTP账号：{{ t.ftp_account_name || '—' }}<br>
               文件名模板：{{ t.csv_filename_template }}<br>
+              <span v-if="t.next_run_at">下次执行：<span class="badge badge-info">{{ t.next_run_at }}</span></span>
+              <span v-else class="muted">未设置定时（停用或空 Cron）</span><br>
               <span v-if="t.last_run_at">上次执行：{{ t.last_run_at }} 状态：<span class="badge" :class="t.last_status === 'success' ? 'badge-success' : 'badge-failed'">{{ t.last_status }}</span></span>
               <span v-else>尚未执行</span>
             </div>

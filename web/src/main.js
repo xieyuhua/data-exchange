@@ -11,6 +11,7 @@ import Tasks from './views/Tasks.vue'
 import TaskForm from './views/TaskForm.vue'
 import DB from './views/DB.vue'
 import FTP from './views/FTP.vue'
+import FTPFiles from './views/FTPFiles.vue'
 import Constants from './views/Constants.vue'
 import Configs from './views/Configs.vue'
 import Logs from './views/Logs.vue'
@@ -25,6 +26,7 @@ const routes = [
   { path: '/tasks/edit/:id', name: 'task-edit', component: TaskForm, meta: { title: '编辑任务' } },
   { path: '/db', name: 'db', component: DB, meta: { title: '数据库连接' } },
   { path: '/ftp', name: 'ftp', component: FTP, meta: { title: 'FTP/SFTP账号' } },
+  { path: '/ftp/:id/files', name: 'ftp-files', component: FTPFiles, meta: { title: '远程文件' } },
   { path: '/constants', name: 'constants', component: Constants, meta: { title: '系统常量' } },
   { path: '/configs', name: 'configs', component: Configs, meta: { title: '系统配置' } },
   { path: '/logs', name: 'logs', component: Logs, meta: { title: '执行日志' } },

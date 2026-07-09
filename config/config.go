@@ -27,6 +27,9 @@ type MySQLConfig struct {
 // Config 应用配置
 type Config struct {
 	Database DatabaseConfig `yaml:"database"`
+	// WebRoot 前端静态资源目录(外部目录)。为空则使用编译期嵌入的前端资源。
+	// 该目录应包含 index.html 与 assets/ (即 vite 构建产物，通常指向 static/ 目录)。
+	WebRoot string `yaml:"web_root"`
 }
 
 // 默认配置（全局单例，供其他包读取）

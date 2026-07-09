@@ -17,6 +17,7 @@
         <h1>{{ $route.meta.title }}</h1>
         <div class="topbar-right">
           <span class="user">&#128100; {{ username }}</span>
+          <button class="logout-btn" @click="openPwd">修改密码</button>
           <button class="logout-btn" @click="logout">退出</button>
           <span class="clock">{{ now }}</span>
         </div>
@@ -25,10 +26,28 @@
     </main>
     <div class="sidebar-overlay" :class="{ show: sidebarOpen }" @click="closeSidebar"></div>
     <div v-if="toast.visible" class="toast" :class="toast.type">{{ toast.msg }}</div>
+
+    <div v-if="showPwd" class="modal-mask" @click.self="showPwd=false">
+      <div class="modal">
+        <div class="modal-head"><h3>修改密码</h3><button class="modal-close" @click="showPwd=false">&times;</button></div>
+        <div class="modal-body">
+          <div class="form-row full"><label>原密码 *</label><input v-model="pwdForm.old_password" type="password" autocomplete="current-password"></div>
+          <div class="form-row full"><label>新密码 *</label><input v-model="pwdForm.new_password" type="password" autocomplete="new-password" placeholder="至少 6 位"></div>
+          <div class="form-row full"><label>确认新密码 *</label><input v-model="pwdForm.confirm" type="password" autocomplete="new-password"></div>
+          <div v-if="pwdErr" class="err-tip">{{ pwdErr }}</div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" @click="showPwd=false">取消</button>
+          <button class="btn btn-primary" :disabled="pwdSaving" @click="savePwd">保存</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
+import { initPageSize } from './configStore'
+import api from './api'
 export default {
   data() {
     return {
@@ -37,6 +56,10 @@ export default {
       toast: { visible: false, msg: '', type: '' },
       loading: false,
       sidebarOpen: false,
+      showPwd: false,
+      pwdSaving: false,
+      pwdErr: '',
+      pwdForm: { old_password: '', new_password: '', confirm: '' },
       nav: [
         { path: '/', label: '仪表盘', icon: '\u25A3' },
         { path: '/vendors', label: '厂家管理', icon: '\u25A4' },
@@ -64,6 +87,20 @@ export default {
       this.username = ''
       location.hash = '#/login'
     },
+    openPwd() { this.pwdErr = ''; this.pwdForm = { old_password: '', new_password: '', confirm: '' }; this.showPwd = true },
+    async savePwd() {
+      this.pwdErr = ''
+      if (!this.pwdForm.old_password || !this.pwdForm.new_password) { this.pwdErr = '请填写原密码和新密码'; return }
+      if (this.pwdForm.new_password.length < 6) { this.pwdErr = '新密码长度至少 6 位'; return }
+      if (this.pwdForm.new_password !== this.pwdForm.confirm) { this.pwdErr = '两次输入的新密码不一致'; return }
+      this.pwdSaving = true
+      try {
+        const r = await api.post('/auth/change-password', this.pwdForm)
+        if (r.code === 0) { this.showPwd = false; this.toastMsg('密码修改成功', 'success') }
+        else this.pwdErr = r.message
+      } catch (e) { this.pwdErr = '修改失败，请重试' }
+      finally { this.pwdSaving = false }
+    },
     toastMsg(msg, type = '') {
       this.toast = { visible: true, msg, type }
       setTimeout(() => this.toast.visible = false, 2400)
@@ -73,6 +110,7 @@ export default {
   mounted() {
     this.tick(); setInterval(() => this.tick(), 1000)
     window.addEventListener('api-loading', this.onLoading)
+    initPageSize()
   },
   beforeDestroy() { window.removeEventListener('api-loading', this.onLoading) },
   provide() { return { toast: this.toastMsg } }

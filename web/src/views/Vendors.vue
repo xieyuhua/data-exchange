@@ -59,8 +59,9 @@
 
 <script>
 import api from '../api'
+import { getPageSize } from '../configStore'
 export default {
-  data() { return { list:[], total:0, page:1, pageSize:20, keyword:'', showModal:false, editing:false, form:{id:0,name:'',code:'',description:'',enabled:1} } },
+  data() { return { list:[], total:0, page:1, pageSize:getPageSize(), keyword:'', showModal:false, editing:false, form:{id:0,name:'',code:'',description:'',enabled:1} } },
   inject: ['toast'],
   async mounted() { await this.load(1) },
   methods: {

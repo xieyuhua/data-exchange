@@ -9,7 +9,8 @@
           <td><span class="badge" :class="'badge-'+a.protocol">{{ a.protocol }}</span></td>
           <td class="cell-mono">{{ a.host }}</td><td>{{ a.port }}</td><td class="cell-mono">{{ a.remote_path }}</td>
           <td><span class="badge" :class="a.enabled?'badge-on':'badge-off'">{{ a.enabled?'启用':'停用' }}</span></td>
-          <td>
+          <td class="op-cell">
+            <button class="btn btn-sm" @click="openFiles(a)">远程文件</button>
             <button class="btn btn-ghost btn-sm" @click="openForm(a)">编辑</button>
             <button class="btn btn-danger btn-sm" @click="del(a.id)">删除</button>
           </td>
@@ -59,7 +60,8 @@ export default {
     async save() { if(!this.form.name) return this.toast('名称不能为空','error'); const r=await api.post('/ftp-accounts',this.form); if(r.code===0){this.showModal=false;this.toast('已保存','success');this.load()}else this.toast(r.message,'error') },
     async testConn() { this.testing=true; try{const r=await api.post('/ftp-accounts/test',this.form); if(r.code===0)this.toast('FTP/SFTP连接成功','success'); else this.toast(r.message,'error') }catch(e){this.toast('测试请求失败','error')}finally{this.testing=false} },
     async del(id) { if(!confirm('确认删除？')) return; const r=await api.del('/ftp-accounts/'+id); if(r.code===0){this.toast('已删除','success');this.load()}else this.toast(r.message,'error') },
-    async load() { const r=await api.get('/ftp-accounts'); this.list=r.data }
+    async load() { const r=await api.get('/ftp-accounts'); this.list=r.data },
+    openFiles(a) { this.$router.push('/ftp/'+a.id+'/files') }
   }
 }
 </script>

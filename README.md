@@ -103,10 +103,11 @@ database:
 | `datetime_format`  | `20060102_150405` | 文件名日期时间格式                 |
 | `max_parallel_tasks`| `3`          | 最大并行任务数                         |
 | `max_tasks_per_vendor`| `4`        | 每个厂家允许的最大 SQL 任务数（可在后台调整） |
+| `page_size`         | `20`         | 列表每页显示条数（厂家/日志/文件），修改后对新打开的列表生效 |
 
 ### 文件名模板占位符
 
-`csv_filename_template` 支持：`{vendor_code}`、`{task_name}`、`{date}`、`{datetime}`、`{yyyy}`、`{mm}`、`{dd}`、`{HH}`、`{MM}`、`{SS}`。
+`csv_filename_template` 支持：`{vendor_code}`、`{task_name}`、`{date}`、`{datetime}`、`{yyyy}`、`{mm}`、`{dd}`、`{HH}`、`{MM}`、`{SS}`、`{yesterday}`（昨天日期，按 `date_format`）、`{yesterday_datetime}`（昨天时间，按 `datetime_format`）。
 
 ### 钉钉 / 企业微信 失败提醒配置
 
@@ -141,7 +142,9 @@ database:
 | 厂家       | `GET/POST /api/vendors` 等          | 厂家 CRUD（列表支持分页） |
 | 任务       | `GET /api/vendors/:id/tasks` `POST /api/tasks` `POST /api/tasks/:id/toggle` `POST /api/tasks/:id/execute` | 任务管理/启停/执行 |
 | 任务运行状态 | `GET /api/tasks/running`           | 返回当前正在执行的任务 ID 列表（用于前端防重复点击） |
+| Cron 预览   | `GET /api/tasks/cron-next?expr=...&n=5` | 返回 cron 表达式未来 n 次执行时间（标准 5 段格式，兼容含秒 6 段） |
 | FTP 账号   | `GET/POST /api/ftp-accounts` 等     | FTP/SFTP 账号 CRUD   |
+| 远程文件   | `GET /api/ftp-accounts/:id/files` `DELETE /api/ftp-accounts/:id/files?path=...` `POST /api/ftp-accounts/:id/files`（multipart `file`） | 浏览/删除/上传指定账号远程服务器文件（基于账号 `remote_path`，含 `..` 穿越防护） |
 | 系统配置   | `GET/POST /api/configs`             | 配置读写             |
 | 执行日志   | `GET /api/logs` `DELETE /api/logs/:id` `DELETE /api/logs` | 日志查询/删除/清空（列表支持分页） |
 | 文件       | `GET /api/files/output` `GET /api/files/download` `GET /api/files/backup` `POST /api/files/clean-backups` | 文件列表（支持分页）/下载/备份/清理 |
@@ -153,7 +156,7 @@ database:
 | 参数        | 默认值 | 说明                 |
 | ----------- | ------ | -------------------- |
 | `page`      | `1`    | 页码（从 1 开始）     |
-| `page_size` | `20`   | 每页条数             |
+| `page_size` | 取自系统配置 `page_size`（默认 `20`） | 每页条数，缺省时读取系统配置，可在「系统配置」页面修改 |
 
 响应携带 `total` 字段表示总记录数，前端据此渲染分页器。
 

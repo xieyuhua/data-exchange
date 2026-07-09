@@ -75,6 +75,57 @@ func (h *Handler) Me(c *gin.Context) {
 	})
 }
 
+// ChangePasswordRequest 修改密码请求
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password"`
+	NewPassword string `json:"new_password"`
+}
+
+// ChangePassword 修改当前登录用户密码（需校验原密码）
+func (h *Handler) ChangePassword(c *gin.Context) {
+	username, _ := c.Get("username")
+	uname, ok := username.(string)
+	if !ok || uname == "" {
+		fail(c, "未获取到当前用户")
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fail(c, "参数错误: "+err.Error())
+		return
+	}
+	if req.OldPassword == "" || req.NewPassword == "" {
+		fail(c, "原密码和新密码均不能为空")
+		return
+	}
+	if len(req.NewPassword) < 6 {
+		fail(c, "新密码长度至少 6 位")
+		return
+	}
+
+	user, err := h.App.UserRepo().GetByUsername(uname)
+	if err != nil {
+		fail(c, "用户不存在")
+		return
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.OldPassword)); err != nil {
+		fail(c, "原密码错误")
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		fail(c, "密码加密失败: "+err.Error())
+		return
+	}
+	if err := h.App.UserRepo().UpdatePassword(uname, string(hash)); err != nil {
+		fail(c, "更新密码失败: "+err.Error())
+		return
+	}
+	success(c, "密码修改成功")
+}
+
 // generateToken 生成有效期 7 天的 JWT
 func generateToken(userID int64, username, role string) (string, error) {
 	claims := jwt.MapClaims{
