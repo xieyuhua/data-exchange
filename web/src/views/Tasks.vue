@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="page-wrap">
     <div class="filter-bar">
       <div class="filter-item">
         <span class="filter-label">厂家</span>

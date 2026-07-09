@@ -1,5 +1,5 @@
 <template>
-  <div class="task-form-page">
+  <div class="task-form-page page-wrap" :class="{ 'sql-expanded': sqlFullscreen }">
     <div class="page-bar">
       <button class="btn btn-ghost" @click="goBack">&larr; 返回任务列表</button>
       <span class="page-bar-title">{{ isEdit ? '编辑任务' : '新增任务' }}</span>
@@ -7,52 +7,62 @@
 
     <div class="panel">
       <div class="panel-body">
-        <div class="form-grid">
-          <div class="form-row"><label>所属厂家 *</label>
-            <select v-model.number="form.vendor_id">
-              <option v-for="v in vendors" :key="v.id" :value="v.id">{{ v.name }} ({{ v.code }})</option>
-            </select>
+        <section class="form-section">
+          <h3 class="section-title">基础信息</h3>
+          <div class="form-grid">
+            <div class="form-row"><label>所属厂家 *</label>
+              <select v-model.number="form.vendor_id">
+                <option v-for="v in vendors" :key="v.id" :value="v.id">{{ v.name }} ({{ v.code }})</option>
+              </select>
+            </div>
+            <div class="form-row"><label>任务名称 *</label><input v-model="form.task_name" placeholder="如 每日订单导出"></div>
+            <div class="form-row"><label>执行模式</label>
+              <select v-model="form.execution_mode">
+                <option value="export_only">仅导出CSV</option>
+                <option value="upload">导出并上传</option>
+              </select>
+            </div>
+            <div class="form-row"><label>数据库连接</label>
+              <select v-model.number="form.db_connection_id">
+                <option :value="null">（不使用）</option>
+                <option v-for="d in dbs" :key="d.id" :value="d.id">{{ d.name }}</option>
+              </select>
+            </div>
+            <div class="form-row"><label>FTP/SFTP账号</label>
+              <select v-model.number="form.ftp_account_id">
+                <option :value="null">（不上传）</option>
+                <option v-for="f in ftps" :key="f.id" :value="f.id">{{ f.name }}</option>
+              </select>
+            </div>
+            <div class="form-row"><label>状态</label>
+              <select v-model.number="form.enabled">
+                <option :value="1">启用</option>
+                <option :value="0">停用</option>
+              </select>
+            </div>
           </div>
-          <div class="form-row"><label>任务名称 *</label><input v-model="form.task_name" placeholder="如 每日订单导出"></div>
-          <div class="form-row"><label>执行模式</label>
-            <select v-model="form.execution_mode">
-              <option value="export_only">仅导出CSV</option>
-              <option value="upload">导出并上传</option>
-            </select>
-          </div>
-          <div class="form-row"><label>数据库连接</label>
-            <select v-model.number="form.db_connection_id">
-              <option :value="null">（不使用）</option>
-              <option v-for="d in dbs" :key="d.id" :value="d.id">{{ d.name }}</option>
-            </select>
-          </div>
-          <div class="form-row"><label>FTP/SFTP账号</label>
-            <select v-model.number="form.ftp_account_id">
-              <option :value="null">（不上传）</option>
-              <option v-for="f in ftps" :key="f.id" :value="f.id">{{ f.name }}</option>
-            </select>
-          </div>
-          <div class="form-row"><label>排序</label><input v-model.number="form.sort_order" type="number"></div>
-          <div class="form-row"><label>状态</label>
-            <select v-model.number="form.enabled">
-              <option :value="1">启用</option>
-              <option :value="0">停用</option>
-            </select>
-          </div>
-          <div class="form-row full"><label>Cron表达式</label><CronInput v-if="loaded" v-model="form.cron_expression" /></div>
-          <div class="form-row full"><label>CSV文件名模板</label>
-            <input v-model="form.csv_filename_template" placeholder="{vendor_code}_{task_name}_{date}.csv">
-            <div class="hint">可用：{vendor_code} {task_name} {date} {datetime} {yyyy} {mm} {dd} {HH} {MM} {SS} {yesterday} {yesterday_datetime}</div>
-          </div>
+        </section>
 
-          <div class="form-row full sql-block" :class="{ 'sql-fullscreen': sqlFullscreen }">
-            <label>SQL内容 *
-              <button type="button" class="btn btn-ghost btn-sm sql-fs-toggle" @click="toggleFullscreen">{{ sqlFullscreen ? '退出全屏' : '全屏' }}</button>
-            </label>
+        <section class="form-section">
+          <h3 class="section-title">调度与输出</h3>
+          <div class="form-grid">
+            <div class="form-row full"><label>CSV文件名模板</label>
+              <input v-model="form.csv_filename_template" placeholder="{date}{HH}{MM}{SS}.csv">
+              <div class="hint">可用：{vendor_code} {task_name} {date} {datetime} {yyyy} {mm} {dd} {HH} {MM} {SS} {yesterday} {yesterday_datetime}</div>
+            </div>
+            <div class="form-row full"><label>Cron表达式</label><CronInput v-if="loaded" v-model="form.cron_expression" /></div>
+          </div>
+        </section>
+
+        <section class="form-section sql-section">
+          <h3 class="section-title">SQL 内容
+            <button type="button" class="btn btn-ghost btn-sm sql-fs-toggle" @click="toggleFullscreen">{{ sqlFullscreen ? '退出全屏' : '全屏' }}</button>
+          </h3>
+          <div class="sql-block" :class="{ 'sql-fullscreen': sqlFullscreen }">
             <div ref="sqlEditor" class="sql-editor"></div>
             <div class="hint" v-pre>支持常量占位符，如 SELECT * FROM t WHERE d='{{ yesterday }}'；输入时自动提示 SQL 关键字与函数（Ctrl+Space 手动触发）</div>
           </div>
-        </div>
+        </section>
 
         <div class="form-actions">
           <button class="btn" :disabled="testing" @click="testSQL">{{ testing ? '执行中...' : '测试 SQL' }}</button>
@@ -89,6 +99,46 @@ import api from '../api'
 import CronInput from '../components/CronInput.vue'
 import { EditorView, basicSetup } from 'codemirror'
 import { sql } from '@codemirror/lang-sql'
+import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
+import { tags as t } from '@lezer/highlight'
+
+// 高级暗色主题：深蓝灰底 + 青蓝高亮
+const sqlDarkTheme = EditorView.theme({
+  '&': {
+    color: '#e2e8f0',
+    backgroundColor: '#0f172a',
+    height: '100%',
+    fontSize: '14px'
+  },
+  '.cm-content': { caretColor: '#38bdf8' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#38bdf8' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+    backgroundColor: '#1e3a5f'
+  },
+  '.cm-gutters': {
+    backgroundColor: '#0f172a',
+    color: '#475569',
+    border: 'none'
+  },
+  '.cm-activeLineGutter': { backgroundColor: '#1e293b', color: '#94a3b8' },
+  '.cm-activeLine': { backgroundColor: '#1e293b40' },
+  '.cm-selectionMatch': { backgroundColor: '#334155' },
+  '.cm-lineNumbers .cm-gutterElement': { padding: '0 12px 0 8px' },
+  '.cm-foldPlaceholder': { backgroundColor: '#1e293b', border: 'none', color: '#94a3b8' }
+}, { dark: true })
+
+// 暗色语法高亮（覆盖默认亮色方案，确保深色背景下可读）
+const sqlDarkHighlight = HighlightStyle.define([
+  { tag: t.keyword, color: '#c084fc', fontWeight: '600' },
+  { tag: [t.string, t.special(t.string)], color: '#86efac' },
+  { tag: [t.number, t.bool, t.null], color: '#fdba74' },
+  { tag: t.comment, color: '#64748b', fontStyle: 'italic' },
+  { tag: [t.operator, t.punctuation], color: '#7dd3fc' },
+  { tag: [t.function(t.variableName), t.function(t.propertyName)], color: '#7dd3fc' },
+  { tag: [t.variableName, t.propertyName], color: '#e2e8f0' },
+  { tag: [t.typeName, t.className], color: '#5eead4' },
+  { tag: t.definitionKeyword, color: '#c084fc', fontWeight: '600' }
+])
 
 export default {
   components: { CronInput },
@@ -100,7 +150,7 @@ export default {
       form: {
         id: 0, vendor_id: 0, task_name: '', execution_mode: 'export_only',
         db_connection_id: null, ftp_account_id: null, cron_expression: '0 2 * * *',
-        sort_order: 0, csv_filename_template: '{vendor_code}_{task_name}_{date}.csv',
+        sort_order: 0, csv_filename_template: '{date}{HH}{MM}{SS}_{task_name}.csv',
         sql_content: '', enabled: 1
       }
     }
@@ -152,6 +202,8 @@ export default {
         extensions: [
           basicSetup,
           sql(),
+          sqlDarkTheme,
+          syntaxHighlighting(sqlDarkHighlight),
           EditorView.lineWrapping,
           EditorView.updateListener.of(u => {
             if (u.docChanged) this.form.sql_content = u.state.doc.toString()

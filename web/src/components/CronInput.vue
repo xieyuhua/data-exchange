@@ -1,49 +1,69 @@
 <template>
-  <div class="cron-input">
-    <!-- 单行：表达式输入框 + 高级开关 -->
-    <div class="cron-line">
+  <div class="cron-field">
+    <!-- 主输入行：表达式直接绑定到父组件的 value，显示即提交值 -->
+    <div class="cron-main">
       <input
-        :value="expr"
-        @input="onRawInput"
-        placeholder="0 2 * * *"
         class="cron-text"
-        aria-label="cron 表达式"
+        v-model="model"
+        placeholder="分 时 日 月 周，如 0 2 * * *"
         spellcheck="false"
+        aria-label="cron 表达式"
       >
-      <button type="button" class="cron-toggle" @click="advanced = !advanced">
+      <button type="button" class="cron-adv-btn" @click="advanced = !advanced">
         {{ advanced ? '收起 ▲' : '高级 ▼' }}
       </button>
     </div>
 
-    <!-- 常用预设：按钮组，选中即生效并回写 -->
+    <!-- 常用预设 -->
     <div class="cron-presets">
       <button
         v-for="p in presets"
         :key="p.expr"
         type="button"
-        :class="['preset-chip', { active: expr === p.expr }]"
-        @click="selectPreset(p.expr)"
+        :class="['cron-chip', { active: expr === p.expr }]"
+        @click="applyPreset(p.expr)"
       >{{ p.label }}</button>
     </div>
 
-    <!-- 即时反馈：下次执行时间 -->
-    <div class="cron-next" v-if="nextRun">下次执行：<b>{{ nextRun }}</b></div>
-    <div class="cron-next err" v-else-if="nextError">表达式无效：{{ nextError }}</div>
-
-    <!-- 高级：图形化构建 + 未来多次预览（默认折叠） -->
-    <div class="cron-advanced" v-if="advanced">
-      <div class="cron-fields">
-        <label>分<input v-model="fields.min" @input="syncFromFields" placeholder="*"></label>
-        <label>时<input v-model="fields.hour" @input="syncFromFields" placeholder="*"></label>
-        <label>日<input v-model="fields.dom" @input="syncFromFields" placeholder="*"></label>
-        <label>月<input v-model="fields.month" @input="syncFromFields" placeholder="*"></label>
-        <label>周<input v-model="fields.dow" @input="syncFromFields" placeholder="*"></label>
+    <!-- 使用说明 -->
+    <div class="cron-help">
+      <button type="button" class="cron-help-toggle" @click="showHelp = !showHelp">
+        {{ showHelp ? '收起使用说明 ▲' : '使用说明 ▼' }}
+      </button>
+      <div class="cron-help-body" v-if="showHelp">
+        <p>标准 cron 表达式由 5 个字段组成，以空格分隔：<code>分 时 日 月 周</code></p>
+        <ul>
+          <li><code>*</code> 任意值（每分/每时/每日…）</li>
+          <li><code>*/n</code> 每 n 个单位，如 <code>*/15</code> 表示每 15 分钟</li>
+          <li><code>1,2,3</code> 枚举，如 <code>1,15</code> 表示第 1 和 15 日</li>
+          <li><code>1-5</code> 区间，如 <code>1-5</code> 表示周一到周五</li>
+          <li>示例：<code>0 2 * * *</code> 每天 02:00；<code>0 9 * * 1-5</code> 工作日 09:00</li>
+        </ul>
       </div>
-      <div class="hint">标准 cron 格式：分 时 日 月 周（空格分隔）。<code>*</code> 任意，<code>*/n</code> 每 n 个单位，<code>1,2</code> 枚举，<code>1-5</code> 区间。</div>
+    </div>
 
-      <div class="cron-preview" v-if="previewList.length">
-        <div class="cron-preview-title">未来 {{ previewList.length }} 次执行时间：</div>
-        <div v-for="(t, i) in previewList" :key="i" class="cron-preview-item">{{ i + 1 }}. {{ t }}</div>
+    <!-- 即时反馈：下次执行 + 最近 5 次执行时间 -->
+    <div class="cron-feedback">
+      <span v-if="nextRun" class="cron-ok">下次执行：<b>{{ nextRun }}</b></span>
+      <span v-else-if="nextError" class="cron-bad">表达式无效：{{ nextError }}</span>
+      <span v-else class="cron-muted">—</span>
+    </div>
+    <div class="cron-preview" v-if="previewList.length">
+      <div class="cron-preview-title">最近 5 次执行时间：</div>
+      <div v-for="(t, i) in previewList" :key="i" class="cron-preview-item">{{ i + 1 }}. {{ t }}</div>
+    </div>
+
+    <!-- 高级：图形化构建 -->
+    <div class="cron-adv" v-if="advanced">
+      <div class="cron-adv-grid">
+        <label>分钟<input v-model="fields.min" @input="applyFields" placeholder="*"></label>
+        <label>小时<input v-model="fields.hour" @input="applyFields" placeholder="*"></label>
+        <label>日<input v-model="fields.dom" @input="applyFields" placeholder="*"></label>
+        <label>月<input v-model="fields.month" @input="applyFields" placeholder="*"></label>
+        <label>周<input v-model="fields.dow" @input="applyFields" placeholder="*"></label>
+      </div>
+      <div class="hint">
+        标准 cron：分 时 日 月 周（空格分隔）。<code>*</code> 任意，<code>*/n</code> 每 n 个单位，<code>1,2</code> 枚举，<code>1-5</code> 区间。
       </div>
     </div>
   </div>
@@ -52,16 +72,24 @@
 <script>
 import api from '../api'
 
+function normalize(e) {
+  return (e || '').replace(/\s+/g, ' ').trim()
+}
+const DEFAULT_EXPR = '0 2 * * *'
+
 export default {
   name: 'CronInput',
   props: {
-    value: { type: String, default: '' }
+    // Vue 3 v-model 约定：modelValue 接收父组件值
+    modelValue: { type: String, default: '' }
   },
   data() {
     return {
-      expr: this.value || '0 2 * * *',
       advanced: false,
-      touched: false,
+      showHelp: false,
+      // 本地 expr 为唯一真值：输入框显示、预设/高级字段、回写均以此为准，
+      // 避免依赖父组件 modelValue 回流导致的「点击预设不生效」
+      expr: normalize(this.modelValue) || DEFAULT_EXPR,
       fields: { min: '0', hour: '2', dom: '*', month: '*', dow: '*' },
       presets: [
         { label: '每天 00:00', expr: '0 0 * * *' },
@@ -79,73 +107,62 @@ export default {
       _debounce: null
     }
   },
+  computed: {
+    // 输入框绑定本地 expr：显示即提交值，且始终即时反映用户操作
+    model: {
+      get() { return this.expr },
+      set(v) { this.setExpr(v) }
+    }
+  },
   watch: {
-    value(v) {
-      // 用户已交互过则尊重用户当前输入，不被外部回填覆盖
-      if (this.touched) return
-      if (v !== this.expr) {
-        this.expr = v || '0 2 * * *'
+    // 父组件回填（含异步加载已有任务）时同步到本地 expr
+    modelValue(v) {
+      const nv = normalize(v) || DEFAULT_EXPR
+      if (nv !== this.expr) {
+        this.expr = nv
         this.parseToFields()
         this.fetchNext()
       }
     }
   },
-  mounted() {
-    // v-if 渲染保证此时 value 已是父组件真实值
-    if (this.value) {
-      this.expr = this.value
-    }
-    this.parseToFields()
-    this.fetchNext()
-  },
   methods: {
-    emit() {
-      this.$emit('input', this.expr)
-    },
-    // 选择预设：直接设置表达式并回写
-    selectPreset(expr) {
-      this.touched = true
-      this.expr = expr
-      this.parseToFields()
-      this.emit()
-      this.fetchNext()
-    },
-    onRawInput(e) {
-      this.touched = true
-      this.expr = e.target.value
-      this.parseToFields()
-      this.emit()
+    // 统一设置表达式：更新本地 + 回写父组件（Vue 3 用 update:modelValue）
+    setExpr(v) {
+      const nv = normalize(v) || DEFAULT_EXPR
+      if (nv === this.expr) return
+      this.expr = nv
+      this.$emit('update:modelValue', nv)
       this.scheduleFetch()
     },
+    applyPreset(expr) {
+      this.setExpr(expr)
+      this.parseToFields()
+      this.fetchNext()
+    },
     parseToFields() {
-      const parts = (this.expr || '').trim().split(/\s+/)
+      const parts = normalize(this.expr).split(/\s+/).filter(Boolean)
       if (parts.length === 5) {
         this.fields = { min: parts[0], hour: parts[1], dom: parts[2], month: parts[3], dow: parts[4] }
       }
     },
-    syncFromFields() {
-      this.touched = true
-      const f = this.fields
-      this.expr = [f.min, f.hour, f.dom, f.month, f.dow].join(' ').trim()
-      this.emit()
+    applyFields() {
+      this.setExpr([this.fields.min, this.fields.hour, this.fields.dom, this.fields.month, this.fields.dow].join(' '))
       this.fetchNext()
     },
-    // 输入时防抖请求预览，避免频繁打接口
     scheduleFetch() {
       if (this._debounce) clearTimeout(this._debounce)
       this._debounce = setTimeout(() => this.fetchNext(), 500)
     },
-    // 拉取「下次执行」做即时反馈
     async fetchNext() {
-      const e = (this.expr || '').trim()
-      if (!e) { this.nextRun = ''; this.nextError = ''; this.previewList = []; return }
+      const e = normalize(this.expr)
+      if (!e) { this.nextRun = ''; this.nextError = '表达式不能为空'; this.previewList = []; return }
       try {
-        const r = await api.get('/tasks/cron-next', { expr: e, n: this.advanced ? 5 : 1 })
+        const r = await api.get('/tasks/cron-next', { expr: e, n: 5 })
         if (r.code === 0) {
           const list = r.data || []
           this.nextRun = list[0] || ''
           this.nextError = ''
-          this.previewList = this.advanced ? list : []
+          this.previewList = list
         } else {
           this.nextRun = ''
           this.nextError = r.message
@@ -162,105 +179,156 @@ export default {
 </script>
 
 <style scoped>
-.cron-input {
+.cron-field {
   border: 1px solid var(--border, #e2e8f0);
-  border-radius: 8px;
-  padding: 8px 10px;
+  border-radius: 10px;
+  padding: 12px 14px;
   background: #fafbfc;
 }
-.cron-line {
+.cron-main {
   display: flex;
-  gap: 8px;
-  align-items: center;
+  gap: 10px;
+  align-items: stretch;
 }
 .cron-text {
   flex: 1;
   min-width: 0;
-  padding: 7px 10px;
+  padding: 9px 12px;
   border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  font-family: monospace;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 14px;
+  color: #0f172a;
+  background: #fff;
+  transition: border-color .15s, box-shadow .15s;
 }
-.cron-toggle {
+.cron-text:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
+}
+.cron-adv-btn {
+  flex: none;
   border: 1px solid #cbd5e1;
   background: #fff;
-  border-radius: 6px;
-  padding: 7px 10px;
+  border-radius: 8px;
+  padding: 0 14px;
   font-size: 13px;
   cursor: pointer;
   color: #334155;
   white-space: nowrap;
+  transition: all .12s;
 }
-.cron-toggle:hover { border-color: #3b82f6; color: #3b82f6; }
+.cron-adv-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+
 .cron-presets {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 10px;
 }
-.preset-chip {
+.cron-chip {
   border: 1px solid #cbd5e1;
   background: #fff;
   border-radius: 999px;
-  padding: 4px 12px;
+  padding: 5px 13px;
   font-size: 12.5px;
   cursor: pointer;
   color: #475569;
   transition: all .12s;
 }
-.preset-chip:hover { border-color: #3b82f6; color: #3b82f6; }
-.preset-chip.active {
+.cron-chip:hover { border-color: #3b82f6; color: #3b82f6; }
+.cron-chip.active {
   background: #3b82f6;
   border-color: #3b82f6;
   color: #fff;
+  box-shadow: 0 1px 4px rgba(59, 130, 246, .35);
 }
-.cron-next {
+
+.cron-feedback { margin-top: 10px; font-size: 13px; min-height: 18px; }
+.cron-ok { color: #0369a1; }
+.cron-ok b { color: #0c4a6e; font-weight: 600; }
+.cron-bad { color: #b91c1c; }
+.cron-muted { color: #94a3b8; }
+
+.cron-help { margin-top: 10px; }
+.cron-help-toggle {
+  border: none;
+  background: transparent;
+  color: #3b82f6;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 0;
+}
+.cron-help-toggle:hover { text-decoration: underline; }
+.cron-help-body {
   margin-top: 8px;
-  font-size: 13px;
-  color: #0369a1;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.7;
 }
-.cron-next.err { color: #b91c1c; }
-.cron-advanced {
-  margin-top: 10px;
-  padding-top: 10px;
+.cron-help-body p { margin: 0 0 6px; }
+.cron-help-body ul { margin: 0; padding-left: 18px; }
+.cron-help-body code {
+  background: #e2e8f0;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.cron-adv {
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px dashed #e2e8f0;
 }
-.cron-fields {
+.cron-adv-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
 }
-.cron-fields label {
+.cron-adv-grid label {
   display: flex;
   flex-direction: column;
   font-size: 12px;
   color: #64748b;
-  gap: 4px;
+  gap: 5px;
 }
-.cron-fields input {
-  width: 64px;
-  padding: 6px 8px;
+.cron-adv-grid input {
+  width: 72px;
+  padding: 7px 9px;
   border: 1px solid #cbd5e1;
-  border-radius: 6px;
+  border-radius: 7px;
   font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #fff;
 }
+.cron-adv-grid input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, .15);
+}
+
 .cron-preview {
-  margin-top: 10px;
+  margin-top: 12px;
   background: #ecfdf5;
   border: 1px solid #a7f3d0;
-  border-radius: 6px;
-  padding: 8px 12px;
+  border-radius: 8px;
+  padding: 10px 14px;
   font-size: 13px;
   color: #065f46;
 }
-.cron-preview-title { font-weight: 600; margin-bottom: 4px; }
-.cron-preview-item { font-family: monospace; }
-.hint { margin-top: 8px; font-size: 12px; color: #94a3b8; }
+.cron-preview-title { font-weight: 600; margin-bottom: 6px; }
+.cron-preview-item { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; line-height: 1.7; }
+
+.hint { margin-top: 10px; font-size: 12px; color: #94a3b8; }
 .hint code {
   background: #e2e8f0;
   padding: 0 4px;
   border-radius: 4px;
-  font-family: monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 </style>

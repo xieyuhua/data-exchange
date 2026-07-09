@@ -798,27 +798,46 @@ tbody tr:hover { background: #f8fafc; }
 .sql-block { margin-top: 18px; }
 .sql-editor { margin-top: 6px; }
 .sql-editor .cm-editor {
-  border: 1px solid var(--border-strong);
+  border: 1px solid #1e293b;
   border-radius: var(--radius-sm);
   font-size: 14px;
-  background: #fff;
-  height: 340px;
+  background: #0f172a;
+  height: 440px;
   transition: border-color .15s, box-shadow .15s;
 }
-.sql-editor .cm-editor.cm-focused { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.sql-editor .cm-editor.cm-focused { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, .18); }
 .sql-editor .cm-scroller { font-family: var(--mono); line-height: 1.6; }
-.sql-editor .cm-gutters { background: #f8fafc; border-right: 1px solid var(--border); color: #94a3b8; }
+.sql-editor .cm-gutters { background: #0f172a; border-right: 1px solid #1e293b; color: #475569; }
 
-/* SQL 编辑器全屏模式 */
-.sql-fs-toggle { margin-left: 10px; padding: 1px 10px; }
+/* SQL 编辑器全屏模式：整块编辑面板变为 SQL 内容（文档流内撑满，不悬浮） */
+.sql-fs-toggle { margin-left: auto; padding: 1px 10px; }
 body.sql-fs-open { overflow: hidden; }
+
+/* 全屏时隐藏其它表单区块、操作栏与返回栏，仅保留 SQL 区块 */
+.sql-expanded .page-bar { display: none; }
+.sql-expanded .form-section:not(.sql-section) { display: none; }
+.sql-expanded .form-actions { display: none; }
+.sql-expanded .sql-test-result { display: none; }
+
+/* 让面板链路撑满内容区高度 */
+.sql-expanded.page-wrap,
+.sql-expanded .panel { height: 100%; }
+.sql-expanded .panel-body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.sql-expanded .sql-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .sql-block.sql-fullscreen {
-  position: fixed;
-  inset: 0;
+  flex: 1;
+  min-height: 0;
   margin: 0;
-  z-index: 10000;
-  background: var(--bg, #f4f6f8);
-  padding: 18px 24px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -833,6 +852,32 @@ body.sql-fs-open { overflow: hidden; }
 .sql-block.sql-fullscreen .sql-editor { flex: 1; margin-top: 8px; min-height: 0; }
 .sql-block.sql-fullscreen .sql-editor .cm-editor { height: 100%; border-radius: var(--radius); }
 .sql-block.sql-fullscreen .hint { margin-top: 8px; }
+
+/* 编辑任务页：分组卡片布局 */
+.form-section {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px 20px;
+  margin-bottom: 18px;
+}
+.section-title {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-title::before {
+  content: "";
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+.sql-block { margin-top: 0; }
 
 /* 内联搜索框 / 筛选栏 */
 .search-input {
@@ -942,7 +987,8 @@ body.sql-fs-open { overflow: hidden; }
 .task-list { display: flex; flex-direction: column; }
 
 /* ===================== 任务独立表单页 ===================== */
-.task-form-page { max-width: 1080px; margin: 0 auto; }
+.page-wrap { width: 100%; }
+.task-form-page { width: 100%; }
 .page-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
 .page-bar-title { font-size: 20px; font-weight: 700; color: var(--text); }
 .form-actions {
@@ -971,7 +1017,7 @@ body.sql-fs-open { overflow: hidden; }
 .result-table th { background: #e8ecf0; font-weight: 600; }
 
 /* 独立页中 SQL 编辑器更高更舒展 */
-.task-form-page .sql-editor .cm-editor { height: 420px; }
+.task-form-page .sql-editor .cm-editor { height: 520px; }
 
 /* 全局请求 loading 遮罩（拦截点击，防止重复触发） */
 .global-loading {
