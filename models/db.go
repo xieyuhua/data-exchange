@@ -60,9 +60,13 @@ func InitDB(dbCfg config.DatabaseConfig) error {
 	sqlDB.SetMaxOpenConns(50)
 	sqlDB.SetMaxIdleConns(10)
 
-	// AutoMigrate 自动建表并初始化默认数据
-	if err := AutoMigrateAll(); err != nil {
-		return err
+	// AutoMigrate 自动建表并初始化默认数据（可由配置 auto_migrate: false 跳过）
+	if config.ShouldAutoMigrate() {
+		if err := AutoMigrateAll(); err != nil {
+			return err
+		}
+	} else {
+		log.Println("[DB] 已按配置跳过自动建表 (auto_migrate: false)，表结构需由外部维护")
 	}
 
 	return nil

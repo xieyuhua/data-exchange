@@ -80,6 +80,11 @@ func main() {
 		webMode = "外部目录: " + webRoot
 	}
 	log.Printf("  前端资源: %s", webMode)
+	amMode := "开启(自动建表)"
+	if !config.ShouldAutoMigrate() {
+		amMode = "关闭(跳过自动建表)"
+	}
+	log.Printf("  自动建表: %s", amMode)
 	log.Printf("  数据库: %s", dbDesc)
 	log.Printf("  输出目录: %s", outputDir)
 	log.Printf("  备份目录: %s", backupDir)

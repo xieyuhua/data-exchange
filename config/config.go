@@ -30,6 +30,10 @@ type Config struct {
 	// WebRoot 前端静态资源目录(外部目录)。为空则使用编译期嵌入的前端资源。
 	// 该目录应包含 index.html 与 assets/ (即 vite 构建产物，通常指向 static/ 目录)。
 	WebRoot string `yaml:"web_root"`
+	// AutoMigrate 是否启用启动时的自动建表(含默认数据初始化)。
+	// 使用 *bool 以区分"未配置"(nil，按默认 true)与显式 false。
+	// 设为 false 可跳过 AutoMigrate（适用于表结构由外部/手动维护的场景）。
+	AutoMigrate *bool `yaml:"auto_migrate"`
 }
 
 // 默认配置（全局单例，供其他包读取）
@@ -92,4 +96,10 @@ func (c *DatabaseConfig) DSN() string {
 		return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s", m.User, m.Password, m.Host, m.Port, m.Database, m.Params)
 	}
 	return c.SQLitePath
+}
+
+// ShouldAutoMigrate 返回是否执行启动时的自动建表。
+// 未配置 auto_migrate 时默认 true；显式设置为 false 时返回 false。
+func ShouldAutoMigrate() bool {
+	return AppConfig.AutoMigrate == nil || *AppConfig.AutoMigrate
 }
