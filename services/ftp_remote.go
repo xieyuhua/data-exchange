@@ -200,18 +200,14 @@ func (a *App) downloadFTPFrom(acc *models.FTPAccount, target string) (*RemoteFil
 		conn.Quit()
 		return nil, fmt.Errorf("FTP登录失败: %v", err)
 	}
-	if err := conn.ChangeDir(acc.RemotePath); err != nil {
-		conn.Quit()
-		return nil, fmt.Errorf("切换远程目录失败: %v", err)
-	}
-	base := path.Base(target)
-	reader, err := conn.Retr(base)
+	// 直接使用 resolveRemoteTarget 计算出的完整路径，避免 ChangeDir + BaseName 造成的路径错位
+	reader, err := conn.Retr(target)
 	if err != nil {
 		conn.Quit()
 		return nil, fmt.Errorf("读取远程文件失败: %v", err)
 	}
 	size := int64(0)
-	if sz, szErr := conn.FileSize(base); szErr == nil {
+	if sz, szErr := conn.FileSize(target); szErr == nil {
 		size = sz
 	}
 	closer := func() error {
@@ -363,13 +359,10 @@ func (a *App) deleteFTP(acc *models.FTPAccount, target string) error {
 	if err := conn.Login(acc.Username, acc.Password); err != nil {
 		return fmt.Errorf("FTP登录失败: %v", err)
 	}
-	base := path.Base(target)
-	if err := conn.ChangeDir(acc.RemotePath); err != nil {
-		return fmt.Errorf("切换远程目录失败: %v", err)
-	}
-	if err := conn.Delete(base); err != nil {
+	// 直接使用 resolveRemoteTarget 计算出的完整路径，避免 ChangeDir + BaseName 造成的路径错位
+	if err := conn.Delete(target); err != nil {
 		// 文件删除失败，尝试作为目录删除
-		if err2 := conn.RemoveDir(base); err2 != nil {
+		if err2 := conn.RemoveDir(target); err2 != nil {
 			return fmt.Errorf("删除失败: %v", err)
 		}
 	}
@@ -387,13 +380,18 @@ func (a *App) uploadFTPTo(acc *models.FTPAccount, localPath, target string) erro
 	}
 	dir := path.Dir(target)
 	if dir != "" && dir != "/" && dir != "." {
-		for _, d := range strings.Split(strings.Trim(dir, "/"), "/") {
+		// 逐层确保远程目录存在（先尝试切换，失败则创建）
+		parts := strings.Split(strings.Trim(dir, "/"), "/")
+		cur := ""
+		for _, d := range parts {
 			if d == "" {
 				continue
 			}
-			if err := conn.ChangeDir(d); err != nil {
-				conn.MakeDir(d)
-				conn.ChangeDir(d)
+			cur = cur + "/" + d
+			if err := conn.ChangeDir(cur); err != nil {
+				if mkErr := conn.MakeDir(cur); mkErr != nil {
+					return fmt.Errorf("创建远程目录失败: %v", mkErr)
+				}
 			}
 		}
 	}
@@ -403,8 +401,7 @@ func (a *App) uploadFTPTo(acc *models.FTPAccount, localPath, target string) erro
 	}
 	defer localFile.Close()
 
-	name := path.Base(target)
-	if err := conn.Stor(name, localFile); err != nil {
+	if err := conn.Stor(target, localFile); err != nil {
 		return fmt.Errorf("FTP上传失败: %v", err)
 	}
 	return nil
