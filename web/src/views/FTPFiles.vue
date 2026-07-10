@@ -58,6 +58,21 @@
         <button class="btn btn-sm" :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button>
       </div>
     </div>
+
+    <div v-if="errMsg" class="modal-mask" @click.self="errMsg = ''">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>获取远程文件失败</h3>
+          <button class="modal-close" @click="errMsg = ''">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="err-tip" style="margin-top:0">{{ errMsg }}</div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-primary" @click="errMsg = ''">确定</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -75,7 +90,8 @@ export default {
       keyword: '',
       page: 1,
       pageSize: getPageSize(),
-      total: 0
+      total: 0,
+      errMsg: ''
     }
   },
   computed: {
@@ -124,10 +140,23 @@ export default {
           page: this.page,
           page_size: this.pageSize
         })
+        if (r.code && r.code !== 0) {
+          // 后端返回业务错误（HTTP 200 + code!=0），此前会被静默吞掉，这里用弹框提示真实原因
+          this.errMsg = r.message || '获取远程文件失败'
+          this.files = []
+          this.total = 0
+          return
+        }
+        this.errMsg = ''
         this.files = (r.data && r.data.list) || []
         this.total = (r.data && r.data.total) || 0
-      } catch (e) { this.toast('获取远程文件失败', 'error'); this.files = []; this.total = 0 }
-      finally { this.filesLoading = false }
+      } catch (e) {
+        // 网络/HTTP 错误：优先取后端返回的 message，回退到异常信息
+        const msg = (e.response && e.response.data && e.response.data.message) || e.message || '获取远程文件失败'
+        this.errMsg = msg
+        this.files = []
+        this.total = 0
+      } finally { this.filesLoading = false }
     },
     async delFile(name) {
       if (!confirm('确认删除远程文件 ' + name + '？')) return
