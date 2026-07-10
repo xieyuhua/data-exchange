@@ -112,9 +112,9 @@ func initDefaultUser() {
 	log.Println("[DB] 已创建默认管理员账号: admin / admin2026")
 }
 
-func initDefaultConfigs() {
-	type kv struct{ k, v, d string }
-	defaults := []kv{
+// defaultConfigs 返回系统默认配置项的键值与说明（供自动初始化与手动导入 SQL 生成复用）
+func defaultConfigs() []struct{ K, V, D string } {
+	return []struct{ K, V, D string }{
 		{"backup_keep_count", "30", "保留备份文件的最大数量，超过则自动清理最旧的"},
 		{"csv_output_dir", "./output", "CSV 导出文件存放目录"},
 		{"backup_dir", "./backup", "文件备份目录"},
@@ -132,11 +132,14 @@ func initDefaultConfigs() {
 		{"notify_wx_webhook", "", "企业微信群机器人 Webhook 地址 (含 key)"},
 		{"notify_at", "", "失败提醒 @ 的成员手机号/userid，逗号分隔，@all 表示所有人"},
 	}
-	for _, d := range defaults {
+}
+
+func initDefaultConfigs() {
+	for _, d := range defaultConfigs() {
 		var cnt int64
-		DB.Model(&SystemConfig{}).Where("config_key = ?", d.k).Count(&cnt)
+		DB.Model(&SystemConfig{}).Where("config_key = ?", d.K).Count(&cnt)
 		if cnt == 0 {
-			DB.Create(&SystemConfig{ConfigKey: d.k, ConfigValue: d.v, Description: d.d})
+			DB.Create(&SystemConfig{ConfigKey: d.K, ConfigValue: d.V, Description: d.D})
 		}
 	}
 }

@@ -18,6 +18,14 @@
       <div class="filter-item">
         <label class="switch"><input type="checkbox" v-model="quoteAliasOn"> 别名加引号（Oracle 双引号 / MySQL 反引号）</label>
       </div>
+      <div class="filter-item">
+        <label class="switch">WITH 列名
+          <select v-model="keyMode" class="filter-control sm">
+            <option value="abc">a/b/c…</option>
+            <option value="header">表头原文</option>
+          </select>
+        </label>
+      </div>
       <div class="filter-item grow">
         <input v-model.trim="targetTable" class="filter-control" placeholder="目标表名（INSERT 模式需要，如 SCHEMA.TABLE）" :disabled="mode === 'with'">
       </div>
@@ -39,7 +47,7 @@
       <div class="col-set-head">列字段设置（WITH 列名自动使用 a/b/c…；可指定类型，日期列支持范围查询）</div>
       <div class="col-grid">
         <div class="col-card" v-for="(c, i) in columns" :key="i">
-          <span class="col-key">{{ c.key }}</span>
+          <span class="col-key" :title="'WITH 列名: ' + colKey(i)">{{ colKey(i) }}</span>
           <span class="col-head" :title="c.header">{{ c.header || ('COL' + (i + 1)) }}</span>
           <select v-model="c.type" class="filter-control sm">
             <option value="auto">自动 · 识别为 {{ detLabel(c.detected) }}</option>
@@ -94,6 +102,7 @@ export default {
       whereCond: '',
       allString: false,
       quoteAliasOn: true,
+      keyMode: 'abc',
       sql: '',
       stats: '',
       columns: [],
@@ -109,7 +118,11 @@ export default {
       this.raw = 'ID\t姓名\t出生日期\t分数\n1\t张三\t1990-01-01\t95.5\n2\t李四\t1992-05-20\t88\n3\t王五\t1988-11-11\tNULL'
       this.onInput()
     },
-    colKey(i) { return i < 26 ? String.fromCharCode(97 + i) : 'col' + (i + 1) },
+    colKey(i) {
+      // 根据 keyMode 返回 WITH 列名：a/b/c… 或 表头原文（按当前数据库加引号）
+      if (this.keyMode === 'header') return this.quoteAlias(this.columns[i] ? this.columns[i].header : '', i)
+      return i < 26 ? String.fromCharCode(97 + i) : 'col' + (i + 1)
+    },
     detectDelimiter(line) {
       if (line.indexOf('\t') !== -1) return '\t'
       if (line.indexOf(';') !== -1) return ';'
@@ -228,11 +241,41 @@ SELECT ${keys.join(', ')}\nFROM t_excel${where};`
       this.stats = `已解析 ${rows.length} 行 × ${headers.length} 列`
     },
     async copySql() {
-      try {
-        await navigator.clipboard.writeText(this.sql)
+      const ok = await this.copyText(this.sql)
+      if (ok) {
         this.$root.toastMsg('已复制 SQL', 'success')
+      } else {
+        // 复制失败（如非 HTTPS / 无剪贴板权限）：选中 <pre> 文本，提示用户用 Ctrl+C
+        const pre = this.$el.querySelector('.sql-output')
+        if (pre) {
+          const range = document.createRange()
+          range.selectNodeContents(pre)
+          const sel = window.getSelection()
+          sel.removeAllRanges()
+          sel.addRange(range)
+        }
+        this.$root.toastMsg('复制失败，已为你选中 SQL，请按 Ctrl+C 复制', 'error')
+      }
+    },
+    copyText(text) {
+      // 优先使用现代剪贴板 API
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text).then(() => true).catch(() => false)
+      }
+      // 降级：临时 textarea + execCommand（兼容 http / 内嵌场景）
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.top = '-9999px'
+        document.body.appendChild(ta)
+        ta.focus()
+        ta.select()
+        const ok = document.execCommand('copy')
+        document.body.removeChild(ta)
+        return Promise.resolve(ok)
       } catch (e) {
-        this.$root.toastMsg('复制失败，请手动选择', 'error')
+        return Promise.resolve(false)
       }
     },
     downloadSql() {

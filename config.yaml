@@ -27,5 +27,6 @@ web_root: ""
 # 启动时是否自动建表(含默认数据初始化)。
 # true(默认): 启动时执行 AutoMigrate，自动创建/更新表结构并写入默认配置与管理员账号。
 # false: 跳过自动建表，表结构需由外部维护(例如数据库已存在表结构、或由 DBA 手动管理)。
+#        配合 `data-exchange genddl schema.sql` 生成建表 SQL 后手动导入。
 # 不写此项时按 true 处理。
-auto_migrate: true
+auto_migrate: false
