@@ -384,6 +384,8 @@ func formatCSVCell(val interface{}) string {
 	switch v := val.(type) {
 	case []byte:
 		return string(v)
+	case string:
+		return v
 	case time.Time:
 		return v.Format("2006-01-02 15:04:05")
 	default:
@@ -853,10 +855,11 @@ func (e *TaskExecutor) testSQLExecution(dbConnID int64, sqlContent string, limit
 		}
 		if headerCols == nil {
 			headerCols = columns
-		} else if len(columns) != len(headerCols) {
-			rows.Close()
-			return headerCols, data, fmt.Errorf("第 %d 段 SQL 返回 %d 列，与首个结果集 %d 列不一致，无法合并", idx+1, len(columns), len(headerCols))
 		}
+
+		// 以首个结果集字段为准，按字段名（大小写不敏感）将本段数据映射到表头对应列，
+		// 不受各段返回列的实际顺序影响；表头中存在但本段缺失的列填空。
+		colMap := buildColumnMap(headerCols, columns)
 
 		values := make([]interface{}, len(columns))
 		valuePtrs := make([]interface{}, len(columns))
@@ -871,12 +874,18 @@ func (e *TaskExecutor) testSQLExecution(dbConnID int64, sqlContent string, limit
 				rows.Close()
 				return headerCols, data, fmt.Errorf("读取数据行失败: %v", err)
 			}
-			row := make([]string, len(columns))
-			for i, val := range values {
+			row := make([]string, len(headerCols))
+			for j := range headerCols {
+				colIdx := colMap[j]
+				if colIdx < 0 {
+					row[j] = "NULL"
+					continue
+				}
+				val := values[colIdx]
 				if val == nil {
-					row[i] = "NULL"
+					row[j] = "NULL"
 				} else {
-					row[i] = formatCSVCell(val)
+					row[j] = formatCSVCell(val)
 				}
 			}
 			data = append(data, row)
