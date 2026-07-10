@@ -25,19 +25,29 @@ func main() {
 	}
 
 	// 子命令: genddl —— 生成建表与初始数据 SQL 文件，供手动导入（auto_migrate: false 场景）
+	// 用法: data-exchange genddl [输出文件] [方言]
+	//   方言留空时使用 config 中的 database.type；可显式传入 mysql 或 sqlite 生成对应方言 DDL。
 	if flag.Arg(0) == "genddl" {
+		args := flag.Args()
 		out := "schema.sql"
-		if len(flag.Args()) > 1 {
-			out = flag.Arg(1)
+		dialect := config.AppConfig.Database.Type
+		if len(args) > 1 {
+			out = args[1]
 		}
-		sql, err := models.GenSchemaSQL(config.AppConfig.Database.Type)
+		if len(args) > 2 {
+			dialect = args[2]
+		}
+		if dialect != "mysql" {
+			dialect = "sqlite"
+		}
+		sql, err := models.GenSchemaSQL(dialect)
 		if err != nil {
 			log.Fatalf("生成建表 SQL 失败: %v", err)
 		}
 		if err := os.WriteFile(out, []byte(sql), 0644); err != nil {
 			log.Fatalf("写入 SQL 文件失败: %v", err)
 		}
-		log.Printf("[genddl] 已生成建表/初始数据 SQL: %s (方言: %s)", out, config.AppConfig.Database.Type)
+		log.Printf("[genddl] 已生成建表/初始数据 SQL: %s (方言: %s)", out, dialect)
 		log.Printf("[genddl] 将 auto_migrate 设为 false 后，在数据库中手动执行该文件即可完成建表与初始化。")
 		return
 	}

@@ -6,5 +6,5 @@ type SystemConfig struct {
 	ConfigKey   string `gorm:"type:varchar(191);uniqueIndex;not null" json:"config_key"`
 	ConfigValue string `gorm:"not null;default:''" json:"config_value"`
 	Description string `gorm:"default:''" json:"description"`
-	UpdatedAt   string `json:"updated_at"`
+	UpdatedAt   DateTime `gorm:"type:datetime" json:"updated_at"`
 }

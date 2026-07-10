@@ -123,7 +123,17 @@ database:
 - `type: sqlite`：使用本地文件（默认 `data.db`，沿用 WAL 模式）。
 - `type: mysql`：连接外部 MySQL，`params` 一般保持默认即可。
 - 配置文件不存在时使用内置默认值（sqlite + `data.db`）。
-- 首次启动会自动 `AutoMigrate` 建表并初始化默认管理员（`admin / admin2026`）与系统配置。
+- 首次启动会自动 `AutoMigrate` 建表并初始化默认管理员（`admin / admin2026`）与系统配置。**Model 为表结构的唯一真源**：新增/修改 `models/` 下的字段后，保持 `auto_migrate: true` 即可在下次启动时自动同步到数据库，无需手动 `ALTER TABLE`。
+- **字段类型约定**（用于避免 GORM 默认把无尺寸 `string` 映射成 `longtext`）：时间字段（`created_at`/`updated_at`/`last_run_at`/`started_at`/`finished_at` 等）统一用 `type:varchar(32)` 存储标准格式 `2006-01-02 15:04:05`；枚举/状态类短字符串（如 `execution_mode`/`import_mode`/`protocol`/`db_type`/`role`/`last_status`）用 `varchar(16~64)`；大文本（`sql_content`/`field_mapping`/`error_message`/`detail`）用 `type:longtext`。注：Go 的 `int` 在 MySQL 下 GORM 默认映射为 `bigint`（用于存储数值型状态码/计数等），属正常行为。
+- 若 `auto_migrate: false`（由外部/DBA 维护表结构），可随时用子命令生成建表 SQL（字符串默认值会自动加引号，MySQL 主键为 `bigint PRIMARY KEY AUTO_INCREMENT`，SQLite 为 `INTEGER PRIMARY KEY AUTOINCREMENT`）：
+
+  ```bash
+  # 生成当前 database.type 对应方言的建表 SQL（默认输出 schema.sql）
+  ./data-exchange.exe genddl
+  # 显式指定输出文件与方言，分别生成 sqlite / mysql 版本
+  ./data-exchange.exe genddl schema.sql sqlite
+  ./data-exchange.exe genddl schema.mysql.sql mysql
+  ```
 
 ## 配置说明
 

@@ -126,7 +126,7 @@ func (e *TaskExecutor) Execute(taskID int64) (*models.ExportLog, error) {
 	logEntry := &models.ExportLog{
 		TaskID:    taskID,
 		Status:    "failed",
-		StartedAt: startTime.Format("2006-01-02 15:04:05"),
+		StartedAt: models.DateTime(startTime),
 	}
 
 	notified := false
@@ -167,7 +167,7 @@ func (e *TaskExecutor) Execute(taskID int64) (*models.ExportLog, error) {
 		}
 		logEntry.RecordCount = recordCount
 		logEntry.Status = "success"
-		logEntry.FinishedAt = time.Now().Format("2006-01-02 15:04:05")
+		logEntry.FinishedAt = models.DateTime(time.Now())
 		logEntry.DurationMs = time.Since(startTime).Milliseconds()
 		logEntry.ErrorMessage = fmt.Sprintf("已导入 %d 行至表 %s", recordCount, task.TargetTableName)
 		e.logRepo.Create(logEntry)
@@ -215,7 +215,7 @@ func (e *TaskExecutor) Execute(taskID int64) (*models.ExportLog, error) {
 	go e.app.CleanOldBackups()
 
 	logEntry.Status = "success"
-	logEntry.FinishedAt = time.Now().Format("2006-01-02 15:04:05")
+	logEntry.FinishedAt = models.DateTime(time.Now())
 	logEntry.DurationMs = time.Since(startTime).Milliseconds()
 	logEntry.ErrorMessage = ""
 	e.logRepo.Create(logEntry)

@@ -14,8 +14,8 @@ func NewSQLTaskHistoryRepo() *SQLTaskHistoryRepo { return &SQLTaskHistoryRepo{} 
 
 // Create 写入一条历史版本
 func (r *SQLTaskHistoryRepo) Create(h *models.SQLTaskHistory) error {
-	if h.CreatedAt == "" {
-		h.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+	if h.CreatedAt.IsZero() {
+		h.CreatedAt = models.DateTime(time.Now())
 	}
 	return models.DB.Create(h).Error
 }

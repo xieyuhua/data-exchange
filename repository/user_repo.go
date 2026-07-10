@@ -71,7 +71,7 @@ func (r *UserRepo) CountByUsername(username string, excludeID int64) (int64, err
 
 // Create 新建用户
 func (r *UserRepo) Create(u *models.User) error {
-	now := time.Now().Format("2006-01-02 15:04:05")
+	now := models.DateTime(time.Now())
 	u.CreatedAt = now
 	u.UpdatedAt = now
 	return models.DB.Create(u).Error
@@ -83,7 +83,7 @@ func (r *UserRepo) Update(u *models.User) error {
 		"nickname":   u.Nickname,
 		"role":       u.Role,
 		"status":     u.Status,
-		"updated_at": time.Now().Format("2006-01-02 15:04:05"),
+		"updated_at": models.DateTime(time.Now()),
 	}).Error
 }
 
@@ -91,7 +91,7 @@ func (r *UserRepo) Update(u *models.User) error {
 func (r *UserRepo) UpdatePasswordByID(id int64, hash string) error {
 	return models.DB.Model(&models.User{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"password":   hash,
-		"updated_at": time.Now().Format("2006-01-02 15:04:05"),
+		"updated_at": models.DateTime(time.Now()),
 	}).Error
 }
 
@@ -99,7 +99,7 @@ func (r *UserRepo) UpdatePasswordByID(id int64, hash string) error {
 func (r *UserRepo) SetStatus(id int64, status int) error {
 	return models.DB.Model(&models.User{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"status":     status,
-		"updated_at": time.Now().Format("2006-01-02 15:04:05"),
+		"updated_at": models.DateTime(time.Now()),
 	}).Error
 }
 

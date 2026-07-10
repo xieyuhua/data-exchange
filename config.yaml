@@ -29,4 +29,4 @@ web_root: ""
 # false: 跳过自动建表，表结构需由外部维护(例如数据库已存在表结构、或由 DBA 手动管理)。
 #        配合 `data-exchange genddl schema.sql` 生成建表 SQL 后手动导入。
 # 不写此项时按 true 处理。
-auto_migrate: false
+auto_migrate: true

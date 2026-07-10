@@ -20,7 +20,7 @@ var DB *gorm.DB
 type APIResponse struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
+	Data    any `json:"data,omitempty"`
 	Total   int64       `json:"total,omitempty"`
 }
 
@@ -47,7 +47,7 @@ func InitDB(dbCfg config.DatabaseConfig) error {
 		if dir != "" && dir != "." {
 			os.MkdirAll(dir, 0755)
 		}
-		DB, err = gorm.Open(sqlite.Open(dbPath+"?_journal_mode=WAL&_foreign_keys=on"), &gorm.Config{
+		DB, err = gorm.Open(sqlite.Open(dbPath+"?_journal_mode=WAL&_foreign_keys=on&_time_format=2006-01-02 15:04:05"), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Warn),
 		})
 		if err != nil {

@@ -69,7 +69,7 @@ func (r *SQLTaskRepo) SetEnabled(id int64, enabled int) error {
 }
 
 // UpdateLastRun 更新任务最近执行信息
-func (r *SQLTaskRepo) UpdateLastRun(id int64, lastRunAt, lastStatus string) error {
+func (r *SQLTaskRepo) UpdateLastRun(id int64, lastRunAt models.DateTime, lastStatus string) error {
 	return models.DB.Model(&models.SQLTask{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"last_run_at": lastRunAt,
 		"last_status": lastStatus,

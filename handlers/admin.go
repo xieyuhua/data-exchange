@@ -139,7 +139,7 @@ func (h *Handler) OperationLogMiddleware() gin.HandlerFunc {
 			Status:     bizCode,
 			Success:    successFlag,
 			DurationMs: time.Since(start).Milliseconds(),
-			CreatedAt:  time.Now().Format("2006-01-02 15:04:05"),
+			CreatedAt:  models.DateTime(time.Now()),
 		})
 	}
 }

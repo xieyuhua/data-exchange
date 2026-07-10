@@ -1,72 +1,72 @@
 -- 数据交换系统 建表与初始数据 SQL（由系统生成，供手动导入）
--- 方言: sqlite
+-- 方言: mysql
 -- 用途: 将 auto_migrate 设为 false 后，由 DBA/运维手动执行本文件完成建表与初始化
 
 CREATE TABLE `constants` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
   `key` varchar(191) NOT NULL,
-  `value` text NOT NULL,
-  `description` text,
+  `value` varchar(191) NOT NULL,
+  `description` varchar(191),
   `created_at` datetime,
   `updated_at` datetime
 );
 
 CREATE TABLE `db_connections` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
   `name` varchar(255) NOT NULL,
   `db_type` varchar(16) NOT NULL DEFAULT 'mysql',
   `host` varchar(255) NOT NULL,
-  `port` integer NOT NULL DEFAULT 3306,
+  `port` int NOT NULL DEFAULT 3306,
   `username` varchar(255) NOT NULL,
   `password` varchar(255) NOT NULL,
   `database_name` varchar(255) NOT NULL,
   `extra_params` text,
-  `enabled` integer DEFAULT 1,
+  `enabled` int DEFAULT 1,
   `created_at` datetime,
   `updated_at` datetime
 );
 
 CREATE TABLE `vendors` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
   `name` varchar(255) NOT NULL,
   `code` varchar(191) NOT NULL,
   `description` varchar(512),
-  `enabled` integer DEFAULT 1,
+  `enabled` int DEFAULT 1,
   `created_at` datetime,
   `updated_at` datetime
 );
 
 CREATE TABLE `ftp_accounts` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
-  `vendor_id` integer NOT NULL,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
+  `vendor_id` int NOT NULL,
   `name` varchar(255) NOT NULL,
   `protocol` varchar(16) NOT NULL DEFAULT 'sftp',
   `host` varchar(255) NOT NULL,
-  `port` integer NOT NULL DEFAULT 22,
+  `port` int NOT NULL DEFAULT 22,
   `username` varchar(255) NOT NULL,
   `password` varchar(255) NOT NULL,
   `remote_path` varchar(255) DEFAULT '/',
-  `enabled` integer DEFAULT 1,
+  `enabled` int DEFAULT 1,
   `created_at` datetime,
   `updated_at` datetime
 );
 
 CREATE TABLE `sql_tasks` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
-  `vendor_id` integer NOT NULL,
-  `db_connection_id` integer,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
+  `vendor_id` int NOT NULL,
+  `db_connection_id` int,
   `task_name` varchar(255) NOT NULL,
-  `sql_content` text NOT NULL,
+  `sql_content` longtext NOT NULL,
   `csv_filename_template` varchar(255) DEFAULT '{vendor_code}_{task_name}_{date}.csv',
   `cron_expression` varchar(64) DEFAULT '0 2 * * *',
   `execution_mode` varchar(32) DEFAULT 'export_only',
-  `ftp_account_id` integer,
-  `target_db_connection_id` integer,
+  `ftp_account_id` int,
+  `target_db_connection_id` int,
   `target_table_name` varchar(191),
-  `field_mapping` text,
+  `field_mapping` longtext,
   `import_mode` varchar(32) DEFAULT 'append',
-  `sort_order` integer DEFAULT 0,
-  `enabled` integer DEFAULT 1,
+  `sort_order` int DEFAULT 0,
+  `enabled` int DEFAULT 1,
   `last_run_at` datetime,
   `last_status` varchar(32),
   `created_at` datetime,
@@ -74,61 +74,61 @@ CREATE TABLE `sql_tasks` (
 );
 
 CREATE TABLE `system_configs` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
   `config_key` varchar(191) NOT NULL,
-  `config_value` text NOT NULL,
-  `description` text,
+  `config_value` varchar(191) NOT NULL,
+  `description` varchar(191),
   `updated_at` datetime
 );
 
 CREATE TABLE `export_logs` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
-  `task_id` integer NOT NULL,
-  `vendor_id` integer NOT NULL,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
+  `task_id` int NOT NULL,
+  `vendor_id` int NOT NULL,
   `status` varchar(32) NOT NULL,
   `execution_mode` varchar(32),
   `csv_filename` varchar(255),
-  `file_size` integer DEFAULT 0,
-  `record_count` integer DEFAULT 0,
-  `error_message` text,
-  `duration_ms` integer DEFAULT 0,
+  `file_size` int DEFAULT 0,
+  `record_count` int DEFAULT 0,
+  `error_message` longtext,
+  `duration_ms` int DEFAULT 0,
   `started_at` datetime,
   `finished_at` datetime,
   `created_at` datetime
 );
 
 CREATE TABLE `users` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
   `username` varchar(191) NOT NULL,
-  `password` text NOT NULL,
-  `nickname` text,
+  `password` varchar(191) NOT NULL,
+  `nickname` varchar(191),
   `role` varchar(32) DEFAULT 'admin',
-  `status` integer DEFAULT 1,
+  `status` int DEFAULT 1,
   `created_at` datetime,
   `updated_at` datetime
 );
 
 CREATE TABLE `operation_logs` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
-  `user_id` integer,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
+  `user_id` int,
   `username` varchar(128),
   `action` varchar(128),
   `module` varchar(64),
   `method` varchar(16),
   `path` varchar(255),
-  `detail` text,
+  `detail` longtext,
   `ip` varchar(64),
-  `status` integer DEFAULT 0,
-  `success` integer DEFAULT 1,
-  `duration_ms` integer DEFAULT 0,
+  `status` int DEFAULT 0,
+  `success` int DEFAULT 1,
+  `duration_ms` int DEFAULT 0,
   `created_at` datetime
 );
 
 CREATE TABLE `sql_task_histories` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT,
-  `task_id` integer NOT NULL,
-  `task_name` text,
-  `sql_content` text NOT NULL,
+  `id` bigint PRIMARY KEY AUTO_INCREMENT,
+  `task_id` int NOT NULL,
+  `task_name` varchar(191),
+  `sql_content` longtext NOT NULL,
   `changed_by` varchar(128),
   `remark` varchar(255),
   `created_at` datetime
@@ -155,4 +155,4 @@ INSERT INTO `system_configs` (`config_key`, `config_value`, `description`) VALUE
 INSERT INTO `system_configs` (`config_key`, `config_value`, `description`) VALUES ('notify_at', '', '失败提醒 @ 的成员手机号/userid，逗号分隔，@all 表示所有人');
 
 -- 默认管理员账号 admin / admin2026 (users)
-INSERT INTO `users` (`username`, `password`, `nickname`, `role`) VALUES ('admin', '$2a$10$fjmFKLyn7Fq5WY9xFbIit.y1NMePrT3Nb5IDsWEtw9dNmFirBwyxG', '管理员', 'admin');
+INSERT INTO `users` (`username`, `password`, `nickname`, `role`) VALUES ('admin', '$2a$10$PpUhtBCSpFVqzdqKPoeYAOwQ434/pzyv6Ji3B56nUjG8Vpc4CurI.', '管理员', 'admin');

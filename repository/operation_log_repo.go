@@ -23,8 +23,8 @@ func NewOperationLogRepo() *OperationLogRepo { return &OperationLogRepo{} }
 
 // Create 写入一条操作日志
 func (r *OperationLogRepo) Create(l *models.OperationLog) error {
-	if l.CreatedAt == "" {
-		l.CreatedAt = time.Now().Format("2006-01-02 15:04:05")
+	if l.CreatedAt.IsZero() {
+		l.CreatedAt = models.DateTime(time.Now())
 	}
 	return models.DB.Create(l).Error
 }

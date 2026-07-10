@@ -70,7 +70,7 @@ func (h *Handler) Login(c *gin.Context) {
 		Path:      "/api/auth/login",
 		IP:        c.ClientIP(),
 		Success:   1,
-		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
+		CreatedAt: models.DateTime(time.Now()),
 	})
 
 	success(c, gin.H{
