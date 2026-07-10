@@ -155,4 +155,4 @@ INSERT INTO `system_configs` (`config_key`, `config_value`, `description`) VALUE
 INSERT INTO `system_configs` (`config_key`, `config_value`, `description`) VALUES ('notify_at', '', '失败提醒 @ 的成员手机号/userid，逗号分隔，@all 表示所有人');
 
 -- 默认管理员账号 admin / admin2026 (users)
-INSERT INTO `users` (`username`, `password`, `nickname`, `role`) VALUES ('admin', '$2a$10$fjmFKLyn7Fq5WY9xFbIit.y1NMePrT3Nb5IDsWEtw9dNmFirBwyxG', '管理员', 'admin');
+INSERT INTO `users` (`username`, `password`, `nickname`, `role`) VALUES ('admin', '$2a$10$eiq/YDt4GpO6k5w4rUQLY.S0clchNCckIox82E.JLOr8yIsKRCJla', '管理员', 'admin');

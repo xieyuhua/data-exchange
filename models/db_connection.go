@@ -10,7 +10,7 @@ type DBConnection struct {
 	Username     string `gorm:"type:varchar(255);not null;default:''" json:"username"`
 	Password     string `gorm:"type:varchar(255);not null;default:''" json:"password"`
 	DatabaseName string `gorm:"type:varchar(255);not null;default:''" json:"database_name"`
-	ExtraParams  string `gorm:"type:text;default:''" json:"extra_params"`
+	ExtraParams  string `gorm:"type:text" json:"extra_params"`
 	Enabled      int    `gorm:"default:1" json:"enabled"`
 	CreatedAt    DateTime `gorm:"type:datetime" json:"created_at"`
 	UpdatedAt    DateTime `gorm:"type:datetime" json:"updated_at"`

@@ -10,7 +10,7 @@ type ExportLog struct {
 	CSVFilename   string `gorm:"type:varchar(255);default:''" json:"csv_filename"`
 	FileSize      int64  `gorm:"default:0" json:"file_size"`
 	RecordCount   int    `gorm:"default:0" json:"record_count"`
-	ErrorMessage  string `gorm:"type:longtext;default:''" json:"error_message"`
+	ErrorMessage  string `gorm:"type:longtext" json:"error_message"`
 	DurationMs    int64  `gorm:"default:0" json:"duration_ms"`
 	StartedAt     DateTime `gorm:"type:datetime" json:"started_at"`
 	FinishedAt    DateTime `gorm:"type:datetime" json:"finished_at"`

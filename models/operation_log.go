@@ -9,7 +9,7 @@ type OperationLog struct {
 	Module     string `gorm:"type:varchar(64);default:''" json:"module"`    // 所属模块（如“厂家管理”）
 	Method     string `gorm:"type:varchar(16);default:''" json:"method"`    // HTTP 方法
 	Path       string `gorm:"type:varchar(255);default:''" json:"path"`     // 请求路径
-	Detail     string `gorm:"type:longtext;default:''" json:"detail"`       // 请求参数摘要
+	Detail     string `gorm:"type:longtext" json:"detail"`       // 请求参数摘要
 	IP         string `gorm:"type:varchar(64);default:''" json:"ip"`        // 客户端 IP
 	Status     int    `gorm:"default:0" json:"status"`                     // 业务响应码（0 成功 / 非 0 失败）
 	Success    int    `gorm:"default:1" json:"success"`                    // 1 成功 / 0 失败
