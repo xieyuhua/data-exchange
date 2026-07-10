@@ -47,6 +47,8 @@ func (r *SQLTaskRepo) Update(t *models.SQLTask) error {
 		"task_name": t.TaskName, "sql_content": t.SQLContent,
 		"csv_filename_template": t.CSVFilenameTemplate, "cron_expression": t.CronExpression,
 		"execution_mode": t.ExecutionMode, "ftp_account_id": t.FTPAccountID,
+		"target_db_connection_id": t.TargetDBConnectionID, "target_table_name": t.TargetTableName,
+		"field_mapping": t.FieldMapping, "import_mode": t.ImportMode,
 		"sort_order": t.SortOrder, "enabled": t.Enabled,
 	}).Error
 }

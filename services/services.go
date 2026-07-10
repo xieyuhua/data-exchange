@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -155,6 +156,27 @@ func (e *TaskExecutor) Execute(taskID int64) (*models.ExportLog, error) {
 		return logEntry, err
 	}
 
+	// 数据导入数据库模式：分段执行 SQL，按字段映射写入目标表（不生成 CSV）
+	if task.ExecutionMode == "import_db" {
+		recordCount, err := e.executeSQLAndImport(task, vendor)
+		if err != nil {
+			logEntry.ErrorMessage = fmt.Sprintf("数据导入失败: %v", err)
+			e.logRepo.Create(logEntry)
+			notifyFail(task.TaskName, vendor.Name, logEntry.ErrorMessage)
+			return logEntry, err
+		}
+		logEntry.RecordCount = recordCount
+		logEntry.Status = "success"
+		logEntry.FinishedAt = time.Now().Format("2006-01-02 15:04:05")
+		logEntry.DurationMs = time.Since(startTime).Milliseconds()
+		logEntry.ErrorMessage = fmt.Sprintf("已导入 %d 行至表 %s", recordCount, task.TargetTableName)
+		e.logRepo.Create(logEntry)
+		if err := e.taskRepo.UpdateLastRun(taskID, logEntry.FinishedAt, "success"); err != nil {
+			log.Printf("[任务执行] 更新任务状态失败: %v", err)
+		}
+		return logEntry, nil
+	}
+
 	csvPath, recordCount, err := e.executeSQLAndGenerateCSV(task, vendor)
 	if err != nil {
 		logEntry.ErrorMessage = fmt.Sprintf("生成CSV失败: %v", err)
@@ -254,6 +276,400 @@ func (e *TaskExecutor) ExecuteByNameConcurrent(taskName string) ([]*TaskResult, 
 	return results, nil
 }
 
+// splitSQLStatements 将多条 SQL 按分号拆分为多段（自动跳过单/双引号字符串、
+// 行注释(--) 与块注释(/* */) 中的分号），返回去除首尾空白后的非空语句列表。
+// 用于支持“任务 SQL 内容分多段执行、结果合并为一个 CSV”的场景。
+func splitSQLStatements(sqlText string) []string {
+	var stmts []string
+	var buf strings.Builder
+	runes := []rune(sqlText)
+	n := len(runes)
+	inSingle, inDouble, inLine, inBlock := false, false, false, false
+
+	flush := func() {
+		if s := strings.TrimSpace(buf.String()); s != "" {
+			stmts = append(stmts, s)
+		}
+		buf.Reset()
+	}
+
+	for i := 0; i < n; i++ {
+		c := runes[i]
+		var next rune
+		if i+1 < n {
+			next = runes[i+1]
+		}
+
+		switch {
+		case inLine:
+			buf.WriteRune(c)
+			if c == '\n' {
+				inLine = false
+			}
+		case inBlock:
+			buf.WriteRune(c)
+			if c == '*' && next == '/' {
+				buf.WriteRune(next)
+				i++
+				inBlock = false
+			}
+		case inSingle:
+			buf.WriteRune(c)
+			if c == '\'' {
+				if next == '\'' { // 转义的 ''
+					buf.WriteRune(next)
+					i++
+				} else {
+					inSingle = false
+				}
+			}
+		case inDouble:
+			buf.WriteRune(c)
+			if c == '"' {
+				inDouble = false
+			}
+		case c == '-' && next == '-':
+			inLine = true
+			buf.WriteRune(c)
+		case c == '/' && next == '*':
+			inBlock = true
+			buf.WriteRune(c)
+		case c == '\'':
+			inSingle = true
+			buf.WriteRune(c)
+		case c == '"':
+			inDouble = true
+			buf.WriteRune(c)
+		case c == ';':
+			flush()
+		default:
+			buf.WriteRune(c)
+		}
+	}
+	flush()
+	return stmts
+}
+
+// stripSQLLeading 去除语句前导的空白与注释，便于判断首个关键字。
+func stripSQLLeading(s string) string {
+	s = strings.TrimSpace(s)
+	for {
+		if strings.HasPrefix(s, "--") {
+			if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+				s = strings.TrimSpace(s[idx+1:])
+				continue
+			}
+			return ""
+		}
+		if strings.HasPrefix(s, "/*") {
+			if idx := strings.Index(s, "*/"); idx >= 0 {
+				s = strings.TrimSpace(s[idx+2:])
+				continue
+			}
+			return ""
+		}
+		break
+	}
+	return s
+}
+
+// isQueryStatement 判断该段 SQL 是否为产出结果集的查询（SELECT/WITH）。
+func isQueryStatement(stmt string) bool {
+	u := strings.ToUpper(stripSQLLeading(stmt))
+	return strings.HasPrefix(u, "SELECT") || strings.HasPrefix(u, "WITH") || strings.HasPrefix(u, "(")
+}
+
+// formatCSVCell 将数据库单元格值格式化为 CSV 字符串（不含 nil 处理，nil 由调用方决定）。
+func formatCSVCell(val interface{}) string {
+	switch v := val.(type) {
+	case []byte:
+		return string(v)
+	case time.Time:
+		return v.Format("2006-01-02 15:04:05")
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// buildColumnMap 以 header 字段顺序为准，在 columns 中按字段名（大小写不敏感）定位每个
+// header 字段对应的列索引；找不到则返回 -1。用于多段 SQL 结果按字段名对齐，而非按位置顺序。
+func buildColumnMap(header, columns []string) []int {
+	idxByName := make(map[string]int, len(columns))
+	for i, c := range columns {
+		idxByName[strings.ToLower(c)] = i
+	}
+	colMap := make([]int, len(header))
+	for j, h := range header {
+		if i, ok := idxByName[strings.ToLower(h)]; ok {
+			colMap[j] = i
+		} else {
+			colMap[j] = -1
+		}
+	}
+	return colMap
+}
+
+// getTargetTableColumns 获取目标表字段列表（按顺序），用于前端字段映射与写入校验。
+func (e *TaskExecutor) getTargetTableColumns(conn *models.DBConnection, table string) ([]string, error) {
+	var query string
+	switch conn.DBType {
+	case "postgresql":
+		query = "SELECT column_name FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position"
+	case "oracle":
+		query = "SELECT column_name FROM user_tab_columns WHERE table_name = UPPER(:1) ORDER BY column_id"
+	case "mssql":
+		query = "SELECT column_name FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position"
+	default: // mysql / sqlite
+		query = "SELECT column_name FROM information_schema.columns WHERE table_name = ? ORDER BY ordinal_position"
+	}
+	db, err := e.app.connectDB(conn)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	rows, err := db.QueryContext(ctx, query, table)
+	if err != nil {
+		return nil, fmt.Errorf("查询目标表字段失败: %v", err)
+	}
+	defer rows.Close()
+
+	var cols []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, fmt.Errorf("读取目标表字段失败: %v", err)
+		}
+		cols = append(cols, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(cols) == 0 {
+		return nil, fmt.Errorf("目标表 %q 不存在或没有字段", table)
+	}
+	return cols, nil
+}
+
+// GetTargetTableColumns 对外暴露的目标表字段获取（供 API handler 调用）。
+func (e *TaskExecutor) GetTargetTableColumns(conn *models.DBConnection, table string) ([]string, error) {
+	return e.getTargetTableColumns(conn, table)
+}
+
+// parseFieldMapping 解析字段映射 JSON（{"目标字段": "源表头", ...}），返回有序映射项。
+func parseFieldMapping(raw string) (map[string]string, error) {
+	m := map[string]string{}
+	if strings.TrimSpace(raw) == "" {
+		return m, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return nil, fmt.Errorf("字段映射 JSON 解析失败: %v", err)
+	}
+	return m, nil
+}
+
+// placeholder 按数据库类型返回参数占位符：postgresql 用 $N，其余用 ?。
+func placeholder(dbType string, i int) string {
+	if dbType == "postgresql" {
+		return "$" + strconv.Itoa(i+1)
+	}
+	return "?"
+}
+
+// importModeTruncate 按数据库类型返回清空目标表的语句。
+func importModeTruncate(dbType, table string) string {
+	if dbType == "oracle" {
+		return "TRUNCATE TABLE " + table
+	}
+	return "TRUNCATE TABLE " + table
+}
+
+// executeSQLAndImport 多段 SQL 各自执行，结果按字段映射分别写入同一目标表。
+// 设计要点（绕开 UNION ALL 的类型/字符集对齐问题）：
+//   - 每段 SQL 独立查询，互不影响；
+//   - 每段结果按其自身表头 -> 目标字段的映射写入（未映射的字段跳过）；
+//   - 多段写入同一张目标表（append），或先 truncate 再写（truncate 模式）；
+//   - 同一段内多行用事务批量 INSERT。
+func (e *TaskExecutor) executeSQLAndImport(task *models.SQLTask, vendor *models.Vendor) (int, error) {
+	if strings.TrimSpace(task.TargetTableName) == "" {
+		return 0, fmt.Errorf("数据导入模式必须指定目标表名")
+	}
+	mapping, err := parseFieldMapping(task.FieldMapping)
+	if err != nil {
+		return 0, err
+	}
+	if len(mapping) == 0 {
+		return 0, fmt.Errorf("请配置字段映射（源表头 -> 目标字段）")
+	}
+
+	// 目标连接：未指定则复用源库连接
+	srcDBConn, err := dbConnRepo.Get(*task.DBConnectionID)
+	if err != nil {
+		return 0, fmt.Errorf("获取源数据库连接失败: %v", err)
+	}
+	var tgtConn *models.DBConnection
+	if task.TargetDBConnectionID != nil {
+		tgtConn, err = dbConnRepo.Get(*task.TargetDBConnectionID)
+		if err != nil {
+			return 0, fmt.Errorf("获取目标数据库连接失败: %v", err)
+		}
+	} else {
+		tgtConn = srcDBConn
+	}
+
+	// 源库：同一会话顺序执行多段 SQL，使临时表/SET 可在段间共享
+	srcDB, err := e.app.connectDB(srcDBConn)
+	if err != nil {
+		return 0, err
+	}
+	defer srcDB.Close()
+	srcConn, err := srcDB.Conn(context.Background())
+	if err != nil {
+		return 0, fmt.Errorf("获取源库会话失败: %v", err)
+	}
+	defer srcConn.Close()
+
+	// 目标库：用于写入（可与源同库，但使用独立连接以保证事务隔离）
+	tgtDB, err := e.app.connectDB(tgtConn)
+	if err != nil {
+		return 0, err
+	}
+	defer tgtDB.Close()
+
+	// truncate 模式：清空目标表
+	if task.ImportMode == "truncate" {
+		if _, err := tgtDB.ExecContext(context.Background(), importModeTruncate(tgtConn.DBType, task.TargetTableName)); err != nil {
+			return 0, fmt.Errorf("清空目标表失败: %v", err)
+		}
+	}
+
+	sqlText := e.app.ReplaceConstants(task.SQLContent)
+	statements := splitSQLStatements(sqlText)
+	if len(statements) == 0 {
+		statements = []string{sqlText}
+	}
+
+	totalRows := 0
+	ctx := context.Background()
+
+	for idx, stmt := range statements {
+		if strings.TrimSpace(stmt) == "" {
+			continue
+		}
+		if !isQueryStatement(stmt) {
+			if _, err := srcConn.ExecContext(ctx, stmt); err != nil {
+				return totalRows, fmt.Errorf("第 %d 段 SQL 执行失败: %v", idx+1, err)
+			}
+			continue
+		}
+
+		rows, err := srcConn.QueryContext(ctx, stmt)
+		if err != nil {
+			return totalRows, fmt.Errorf("第 %d 段 SQL 查询失败: %v", idx+1, err)
+		}
+		cols, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			return totalRows, fmt.Errorf("第 %d 段 SQL 获取列名失败: %v", idx+1, err)
+		}
+
+		// 构建本段映射：目标字段列表 + 各目标字段在源结果集中的列下标
+		var tgtCols []string
+		var srcIdx []int
+		for tgt, src := range mapping {
+			// 按本段实际表头定位源下标（大小写不敏感）
+			found := -1
+			for ci, c := range cols {
+				if strings.EqualFold(c, src) {
+					found = ci
+					break
+				}
+			}
+			if found < 0 {
+				rows.Close()
+				return totalRows, fmt.Errorf("第 %d 段 SQL 结果中找不到映射源字段 %q（目标字段 %q）", idx+1, src, tgt)
+			}
+			tgtCols = append(tgtCols, tgt)
+			srcIdx = append(srcIdx, found)
+		}
+		if len(tgtCols) == 0 {
+			rows.Close()
+			return totalRows, fmt.Errorf("第 %d 段 SQL 没有可用的字段映射", idx+1)
+		}
+
+		// 预编译 INSERT（目标库方言占位符）
+		ph := make([]string, len(tgtCols))
+		for i := range tgtCols {
+			ph[i] = placeholder(tgtConn.DBType, i)
+		}
+		quotedTgt := make([]string, len(tgtCols))
+		for i, c := range tgtCols {
+			quotedTgt[i] = "`" + c + "`"
+		}
+		insertSQL := fmt.Sprintf("INSERT INTO `%s` (%s) VALUES (%s)",
+			task.TargetTableName, strings.Join(quotedTgt, ", "), strings.Join(ph, ", "))
+		stmtIns, err := tgtDB.PrepareContext(ctx, insertSQL)
+		if err != nil {
+			rows.Close()
+			return totalRows, fmt.Errorf("预编译写入语句失败: %v", err)
+		}
+
+		tx, err := tgtDB.BeginTx(ctx, nil)
+		if err != nil {
+			stmtIns.Close()
+			rows.Close()
+			return totalRows, fmt.Errorf("开启写入事务失败: %v", err)
+		}
+
+		values := make([]interface{}, len(cols))
+		valuePtrs := make([]interface{}, len(cols))
+		segRows := 0
+		rowErr := error(nil)
+		for rows.Next() {
+			for i := range cols {
+				valuePtrs[i] = &values[i]
+			}
+			if err := rows.Scan(valuePtrs...); err != nil {
+				rowErr = fmt.Errorf("读取数据行失败: %v", err)
+				break
+			}
+			args := make([]interface{}, len(tgtCols))
+			for k, si := range srcIdx {
+				v := values[si]
+				if v == nil {
+					args[k] = nil
+				} else {
+					args[k] = formatCSVCell(v) // 统一转为字符串，交由目标库按字段类型做隐式转换，规避类型/字符集不一致
+				}
+			}
+			if _, err := tx.Stmt(stmtIns).ExecContext(ctx, args...); err != nil {
+				rowErr = fmt.Errorf("写入目标表失败: %v", err)
+				break
+			}
+			segRows++
+		}
+		rows.Close()
+		stmtIns.Close()
+
+		if rowErr != nil {
+			tx.Rollback()
+			return totalRows, rowErr
+		}
+		if err := rows.Err(); err != nil {
+			tx.Rollback()
+			return totalRows, fmt.Errorf("读取结果集出错: %v", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return totalRows, fmt.Errorf("提交写入事务失败: %v", err)
+		}
+		totalRows += segRows
+		log.Printf("[数据导入] 第 %d 段写入 %d 行", idx+1, segRows)
+	}
+
+	return totalRows, nil
+}
+
 func (e *TaskExecutor) executeSQLAndGenerateCSV(task *models.SQLTask, vendor *models.Vendor) (string, int, error) {
 	dbConn, err := dbConnRepo.Get(*task.DBConnectionID)
 	if err != nil {
@@ -267,15 +683,9 @@ func (e *TaskExecutor) executeSQLAndGenerateCSV(task *models.SQLTask, vendor *mo
 	defer db.Close()
 
 	sqlContent := e.app.ReplaceConstants(task.SQLContent)
-	rows, err := db.Query(sqlContent)
-	if err != nil {
-		return "", 0, fmt.Errorf("SQL执行失败: %v", err)
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return "", 0, fmt.Errorf("获取列名失败: %v", err)
+	statements := splitSQLStatements(sqlContent)
+	if len(statements) == 0 {
+		statements = []string{sqlContent}
 	}
 
 	outputDir := e.app.GetConfigWithDefault("csv_output_dir", "./output")
@@ -301,45 +711,90 @@ func (e *TaskExecutor) executeSQLAndGenerateCSV(task *models.SQLTask, vendor *mo
 		writer.Comma = rune(delim[0])
 	}
 
-	headerRow := make([]string, len(columns))
-	for i, col := range columns {
-		headerRow[i] = col
+	// 使用同一物理连接顺序执行多段 SQL，使临时表/会话变量可在段间共享
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return "", 0, fmt.Errorf("获取数据库会话失败: %v", err)
 	}
-	if err := writer.Write(headerRow); err != nil {
-		return "", 0, fmt.Errorf("写入CSV表头失败: %v", err)
-	}
+	defer conn.Close()
 
+	var headerCols []string
+	headerWritten := false
 	recordCount := 0
-	values := make([]interface{}, len(columns))
-	valuePtrs := make([]interface{}, len(columns))
 
-	for rows.Next() {
-		for i := range columns {
-			valuePtrs[i] = &values[i]
+	for idx, stmt := range statements {
+		if strings.TrimSpace(stmt) == "" {
+			continue
 		}
-		if err := rows.Scan(valuePtrs...); err != nil {
-			return "", 0, fmt.Errorf("读取数据行失败: %v", err)
+		// 非查询语句（建临时表 / SET / DML 等）仅执行，不产出数据
+		if !isQueryStatement(stmt) {
+			if _, err := conn.ExecContext(ctx, stmt); err != nil {
+				return "", 0, fmt.Errorf("第 %d 段 SQL 执行失败: %v", idx+1, err)
+			}
+			continue
 		}
-		row := make([]string, len(columns))
-		for i, val := range values {
-			if val == nil {
-				row[i] = ""
-			} else {
-				switch v := val.(type) {
-				case []byte:
-					row[i] = string(v)
-				case time.Time:
-					row[i] = v.Format("2006-01-02 15:04:05")
-				default:
-					row[i] = fmt.Sprintf("%v", v)
+
+		rows, err := conn.QueryContext(ctx, stmt)
+		if err != nil {
+			return "", 0, fmt.Errorf("第 %d 段 SQL 执行失败: %v", idx+1, err)
+		}
+		columns, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			return "", 0, fmt.Errorf("第 %d 段 SQL 获取列名失败: %v", idx+1, err)
+		}
+
+		if !headerWritten {
+			headerCols = columns
+			if err := writer.Write(columns); err != nil {
+				rows.Close()
+				return "", 0, fmt.Errorf("写入CSV表头失败: %v", err)
+			}
+			headerWritten = true
+		}
+
+		// 以首个结果集字段为准，按字段名（大小写不敏感）将本段数据映射到表头对应列，
+		// 不受各段返回列的实际顺序影响；表头中存在但本段缺失的列填空。
+		colMap := buildColumnMap(headerCols, columns)
+
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for rows.Next() {
+			for i := range columns {
+				valuePtrs[i] = &values[i]
+			}
+			if err := rows.Scan(valuePtrs...); err != nil {
+				rows.Close()
+				return "", 0, fmt.Errorf("读取数据行失败: %v", err)
+			}
+			row := make([]string, len(headerCols))
+			for j := range headerCols {
+				colIdx := colMap[j]
+				if colIdx < 0 {
+					row[j] = ""
+					continue
+				}
+				val := values[colIdx]
+				if val == nil {
+					row[j] = ""
+				} else {
+					row[j] = formatCSVCell(val)
 				}
 			}
+			if err := writer.Write(row); err != nil {
+				rows.Close()
+				return "", 0, fmt.Errorf("写入CSV数据失败: %v", err)
+			}
+			recordCount++
 		}
-		if err := writer.Write(row); err != nil {
-			return "", 0, fmt.Errorf("写入CSV数据失败: %v", err)
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return "", 0, fmt.Errorf("读取结果集出错: %v", err)
 		}
-		recordCount++
+		rows.Close()
 	}
+
 	writer.Flush()
 	if err := writer.Error(); err != nil {
 		return "", 0, fmt.Errorf("CSV写入错误: %v", err)
@@ -359,48 +814,80 @@ func (e *TaskExecutor) testSQLExecution(dbConnID int64, sqlContent string, limit
 	defer db.Close()
 
 	processedSQL := e.app.ReplaceConstants(sqlContent)
-	rows, err := db.Query(processedSQL)
-	if err != nil {
-		return nil, nil, fmt.Errorf("SQL执行失败: %v", err)
-	}
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, nil, fmt.Errorf("获取列名失败: %v", err)
+	statements := splitSQLStatements(processedSQL)
+	if len(statements) == 0 {
+		statements = []string{processedSQL}
 	}
 
+	// 同一物理连接顺序执行多段 SQL，结果合并预览
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("获取数据库会话失败: %v", err)
+	}
+	defer conn.Close()
+
+	var headerCols []string
 	var data [][]string
-	values := make([]interface{}, len(columns))
-	valuePtrs := make([]interface{}, len(columns))
 	count := 0
 
-	for rows.Next() && (limit <= 0 || count < limit) {
-		for i := range columns {
-			valuePtrs[i] = &values[i]
+	for idx, stmt := range statements {
+		if strings.TrimSpace(stmt) == "" {
+			continue
 		}
-		if err := rows.Scan(valuePtrs...); err != nil {
-			return columns, data, fmt.Errorf("读取数据行失败: %v", err)
+		if !isQueryStatement(stmt) {
+			if _, err := conn.ExecContext(ctx, stmt); err != nil {
+				return headerCols, data, fmt.Errorf("第 %d 段 SQL 执行失败: %v", idx+1, err)
+			}
+			continue
 		}
-		row := make([]string, len(columns))
-		for i, val := range values {
-			if val == nil {
-				row[i] = "NULL"
-			} else {
-				switch v := val.(type) {
-				case []byte:
-					row[i] = string(v)
-				case time.Time:
-					row[i] = v.Format("2006-01-02 15:04:05")
-				default:
-					row[i] = fmt.Sprintf("%v", v)
+
+		rows, err := conn.QueryContext(ctx, stmt)
+		if err != nil {
+			return headerCols, data, fmt.Errorf("第 %d 段 SQL 执行失败: %v", idx+1, err)
+		}
+		columns, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			return headerCols, data, fmt.Errorf("第 %d 段 SQL 获取列名失败: %v", idx+1, err)
+		}
+		if headerCols == nil {
+			headerCols = columns
+		} else if len(columns) != len(headerCols) {
+			rows.Close()
+			return headerCols, data, fmt.Errorf("第 %d 段 SQL 返回 %d 列，与首个结果集 %d 列不一致，无法合并", idx+1, len(columns), len(headerCols))
+		}
+
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for rows.Next() {
+			if limit > 0 && count >= limit {
+				break
+			}
+			for i := range columns {
+				valuePtrs[i] = &values[i]
+			}
+			if err := rows.Scan(valuePtrs...); err != nil {
+				rows.Close()
+				return headerCols, data, fmt.Errorf("读取数据行失败: %v", err)
+			}
+			row := make([]string, len(columns))
+			for i, val := range values {
+				if val == nil {
+					row[i] = "NULL"
+				} else {
+					row[i] = formatCSVCell(val)
 				}
 			}
+			data = append(data, row)
+			count++
 		}
-		data = append(data, row)
-		count++
+		rows.Close()
+		if limit > 0 && count >= limit {
+			break
+		}
 	}
-	return columns, data, nil
+	return headerCols, data, nil
 }
 
 // ==================== CSV生成（App 工具方法） ====================

@@ -83,6 +83,7 @@ func SetupRouter(staticFS embed.FS, app *services.App, webRoot string) *gin.Engi
 		api.POST("/db-connections", h.SaveDBConnection)
 		api.DELETE("/db-connections/:id", h.DeleteDBConnection)
 		api.POST("/db-connections/test", h.TestDBConnection)
+		api.GET("/db-connections/:id/columns", h.GetDBTableColumns)
 
 		// 厂家
 		api.GET("/vendors", h.ListVendors)

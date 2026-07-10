@@ -40,6 +40,9 @@ func NewDBConnectionService(repo *repository.DBConnectionRepo) *DBConnectionServ
 // List 列出全部数据库连接
 func (s *DBConnectionService) List() ([]models.DBConnection, error) { return s.repo.List() }
 
+// Get 按 ID 获取数据库连接
+func (s *DBConnectionService) Get(id int64) (*models.DBConnection, error) { return s.repo.Get(id) }
+
 // Save 保存（新增/更新）数据库连接
 func (s *DBConnectionService) Save(c *models.DBConnection) error {
 	if c.Name == "" {

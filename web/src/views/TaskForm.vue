@@ -20,6 +20,7 @@
               <select v-model="form.execution_mode">
                 <option value="export_only">仅导出CSV</option>
                 <option value="upload">导出并上传</option>
+                <option value="import_db">数据导入数据库</option>
               </select>
             </div>
             <div class="form-row"><label>数据库连接</label>
@@ -62,6 +63,46 @@
           <div class="sql-block" :class="{ 'sql-fullscreen': sqlFullscreen }">
             <div ref="sqlEditor" class="sql-editor"></div>
             <div class="hint" v-pre>支持常量占位符，如 SELECT * FROM t WHERE d='{{ yesterday }}'；输入时自动提示 SQL 关键字与函数（Ctrl+Space 手动触发）</div>
+            <div class="hint">可用分号分隔多段 SQL：同一会话按顺序执行（可先建临时表/SET 再查询），所有 SELECT 结果合并为一个 CSV（各段列数需一致）。</div>
+          </div>
+        </section>
+
+        <section v-if="form.execution_mode === 'import_db'" class="form-section">
+          <h3 class="section-title">数据导入配置（多段 SQL 各自执行，按字段映射写入同一目标表）</h3>
+          <div class="form-grid">
+            <div class="form-row"><label>目标数据库连接</label>
+              <select v-model.number="form.target_db_connection_id">
+                <option :value="null">（复用源库连接）</option>
+                <option v-for="d in dbs" :key="d.id" :value="d.id">{{ d.name }}</option>
+              </select>
+            </div>
+            <div class="form-row"><label>目标表名 *</label>
+              <input v-model.trim="form.target_table_name" placeholder="如 t_result_xxx">
+              <button class="btn btn-ghost btn-sm" :disabled="!form.target_table_name" @click="fetchTargetColumns">获取目标表字段</button>
+            </div>
+            <div class="form-row"><label>写入方式</label>
+              <select v-model="form.import_mode">
+                <option value="append">追加（保留已有数据）</option>
+                <option value="truncate">先清空目标表再写入</option>
+              </select>
+            </div>
+            <div class="form-row full">
+              <label>字段映射（源表头 → 目标字段）</label>
+              <div class="hint">先点「测试 SQL」取回源表头，再点「获取目标表字段」取回目标字段；系统会按名称自动匹配，可手动调整。</div>
+              <div v-if="mappingRows.length" class="map-table">
+                <div class="map-head">
+                  <span>目标字段</span><span>← 源表头</span>
+                </div>
+                <div v-for="(m, i) in mappingRows" :key="i" class="map-row">
+                  <span class="map-tgt">{{ m.tgt }}</span>
+                  <select v-model="m.src" class="map-src">
+                    <option value="">（不导入）</option>
+                    <option v-for="c in srcHeaders" :key="c" :value="c">{{ c }}</option>
+                  </select>
+                </div>
+              </div>
+              <div v-else class="muted">尚无映射：请先「测试 SQL」并「获取目标表字段」。</div>
+            </div>
           </div>
         </section>
 
@@ -221,8 +262,10 @@ export default {
         id: 0, vendor_id: 0, task_name: '', execution_mode: 'export_only',
         db_connection_id: null, ftp_account_id: null, cron_expression: '0 2 * * *',
         sort_order: 0, csv_filename_template: '{date}{HH}{MM}{SS}_{task_name}.csv',
-        sql_content: '', enabled: 1
+        sql_content: '', enabled: 1,
+        target_db_connection_id: null, target_table_name: '', field_mapping: '', import_mode: 'append'
       },
+      srcHeaders: [], targetColumns: [], mappingRows: [],
       showHistory: false, historyList: [], historyLoading: false, viewId: 0,
       compareIds: [], compareCurrent: false,
       showDiff: false, diffRows: [], diffLabels: { a: '', b: '' }, diffStats: { add: 0, del: 0 },
@@ -259,7 +302,18 @@ export default {
           execution_mode: t.execution_mode, db_connection_id: t.db_connection_id,
           ftp_account_id: t.ftp_account_id, cron_expression: t.cron_expression,
           sort_order: t.sort_order, csv_filename_template: t.csv_filename_template,
-          sql_content: t.sql_content, enabled: t.enabled
+          sql_content: t.sql_content, enabled: t.enabled,
+          target_db_connection_id: t.target_db_connection_id || null,
+          target_table_name: t.target_table_name || '', field_mapping: t.field_mapping || '',
+          import_mode: t.import_mode || 'append'
+        }
+        if (t.target_table_name && t.field_mapping) {
+          try {
+            const m = JSON.parse(t.field_mapping)
+            this.targetColumns = Object.keys(m)
+            this.srcHeaders = Array.from(new Set(Object.values(m).filter(Boolean)))
+            this.mappingRows = this.targetColumns.map(tgt => ({ tgt, src: m[tgt] || '' }))
+          } catch (e) { this.mappingRows = [] }
         }
       } else {
         this.toast(r.message, 'error')
@@ -353,6 +407,8 @@ export default {
         const r = await api.post('/tasks/test-sql', { db_connection_id: this.form.db_connection_id, sql_content: this.form.sql_content })
         if (r.code === 0) {
           this.sqlResult = { columns: r.data.columns, rows: r.data.rows, row_count: r.data.row_count, error: null }
+          this.srcHeaders = r.data.columns || []
+          if (this.form.execution_mode === 'import_db') this.syncMapping()
           this.toast('SQL执行成功，返回 ' + r.data.row_count + ' 行', 'success')
         } else {
           this.sqlResult = { error: r.message, columns: [], rows: [], row_count: 0 }
@@ -366,10 +422,56 @@ export default {
     async save() {
       if (!this.form.task_name) return this.toast('任务名称不能为空', 'error')
       if (!this.form.vendor_id) return this.toast('请选择所属厂家', 'error')
+      if (this.form.execution_mode === 'import_db') {
+        if (!this.form.target_table_name) return this.toast('请填写目标表名', 'error')
+        this.syncMapping()
+        this.form.field_mapping = JSON.stringify(this.mappingToObj())
+      }
       this.syncEditor()
       const r = await api.post('/tasks', this.form)
       if (r.code === 0) { this.toast('已保存', 'success'); this.goBack() }
       else this.toast(r.message, 'error')
+    },
+    // 字段映射：源表头 → 目标字段，序列化为 {"目标字段": "源表头"}
+    mappingToObj() {
+      const obj = {}
+      for (const m of this.mappingRows) if (m.src) obj[m.tgt] = m.src
+      return obj
+    },
+    // 依据目标字段（mappingRows）与源表头，自动按名称匹配映射
+    syncMapping() {
+      if (!this.targetColumns.length) {
+        // 没有目标字段时，暂以源表头为目标字段，便于直接保存
+        this.mappingRows = this.srcHeaders.map(h => ({ tgt: h, src: h }))
+        return
+      }
+      const rows = this.targetColumns.map(tgt => {
+        const prev = (this.mappingRows.find(m => m.tgt === tgt) || {}).src
+        let src = prev || ''
+        if (!src && this.srcHeaders.includes(tgt)) src = tgt // 同名自动匹配
+        else if (!src) src = '' // 留空，用户手动选
+        return { tgt, src }
+      })
+      this.mappingRows = rows
+    },
+    async fetchTargetColumns() {
+      if (!this.form.target_table_name) return this.toast('请先填写目标表名', 'error')
+      const connId = this.form.target_db_connection_id || this.form.db_connection_id
+      if (!connId) return this.toast('请选择目标/源数据库连接', 'error')
+      try {
+        const r = await api.get('/db-connections/' + connId + '/columns', { table: this.form.target_table_name })
+        if (r.code === 0 && r.data && r.data.length) {
+          this.targetColumns = r.data
+          this.syncMapping()
+          this.toast('已获取 ' + r.data.length + ' 个目标字段', 'success')
+        } else if (r.code !== 0) {
+          this.toast(r.message, 'error')
+        } else {
+          this.toast('目标表无字段或不存在', 'error')
+        }
+      } catch (e) {
+        this.toast('获取目标字段失败', 'error')
+      }
     },
     async openHistory() {
       if (!this.form.id) return
@@ -506,4 +608,12 @@ export default {
 .dl-sign { width: 14px; text-align: center; color: #64748b; flex: none; }
 .dl-text { flex: 1; }
 .switch { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: #475569; cursor: pointer; }
+.map-table { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; max-width: 560px; }
+.map-head, .map-row { display: flex; align-items: center; }
+.map-head { background: #f1f5f9; font-weight: 600; font-size: 13px; color: #334155; }
+.map-head span, .map-row span.map-tgt { flex: 0 0 200px; padding: 8px 12px; }
+.map-row { border-top: 1px solid #eef2f7; }
+.map-row:hover { background: #f8fafc; }
+.map-tgt { font-family: 'Consolas','Courier New',monospace; color: #0f172a; }
+.map-src { flex: 1; margin: 6px 12px; }
 </style>

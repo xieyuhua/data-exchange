@@ -93,6 +93,27 @@ func (h *Handler) DeleteDBConnection(c *gin.Context) {
 	success(c, nil)
 }
 
+// GetDBTableColumns 获取指定连接中某张表的字段列表（供数据导入字段映射使用）
+func (h *Handler) GetDBTableColumns(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	table := strings.TrimSpace(c.Query("table"))
+	if table == "" {
+		fail(c, "请提供 table 参数")
+		return
+	}
+	conn, err := h.App.DBConnection.Get(id)
+	if err != nil {
+		fail(c, "连接不存在: "+err.Error())
+		return
+	}
+	cols, err := h.App.Executor.GetTargetTableColumns(conn, table)
+	if err != nil {
+		fail(c, "获取表字段失败: "+err.Error())
+		return
+	}
+	success(c, cols)
+}
+
 func (h *Handler) TestDBConnection(c *gin.Context) {
 	var conn models.DBConnection
 	if err := c.ShouldBindJSON(&conn); err != nil {
