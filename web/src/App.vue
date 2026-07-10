@@ -6,7 +6,7 @@
     <aside class="sidebar" :class="{ open: sidebarOpen }">
       <div class="logo"><span class="logo-icon">&#8660;</span><span class="logo-text">数据交换系统</span></div>
       <nav class="nav">
-        <router-link v-for="r in nav" :key="r.path" :to="r.path" class="nav-item" active-class="active" @click.native="closeSidebar">
+        <router-link v-for="r in navFiltered" :key="r.path" :to="r.path" class="nav-item" active-class="active" @click.native="closeSidebar">
           <span class="nav-ico">{{ r.icon }}</span>{{ r.label }}
         </router-link>
       </nav>
@@ -53,6 +53,7 @@ export default {
     return {
       now: '',
       username: localStorage.getItem('username') || '',
+      role: localStorage.getItem('role') || '',
       toast: { visible: false, msg: '', type: '' },
       loading: false,
       sidebarOpen: false,
@@ -63,6 +64,7 @@ export default {
       nav: [
         { path: '/', label: '仪表盘', icon: '\u25A3' },
         { path: '/vendors', label: '厂家管理', icon: '\u25A4' },
+        { path: '/excel-sql', label: 'Excel转SQL', icon: '\u270F' },
         { path: '/tasks', label: 'SQL任务', icon: '\u25A6' },
         { path: '/db', label: '数据库连接', icon: '\u26C1' },
         { path: '/ftp', label: 'FTP/SFTP账号', icon: '\u21EA' },
@@ -70,7 +72,15 @@ export default {
         { path: '/configs', label: '系统配置', icon: '\u2699' },
         { path: '/logs', label: '执行日志', icon: '\u2630' },
         { path: '/files', label: '文件管理', icon: '\u26C0' },
+        { path: '/users', label: '用户管理', icon: '\u263A', admin: true },
+        { path: '/operation-logs', label: '操作日志', icon: '\u270E', admin: true },
+        
       ]
+    }
+  },
+  computed: {
+    navFiltered() {
+      return this.nav.filter(r => !r.admin || this.role === 'admin')
     }
   },
   methods: {
@@ -84,7 +94,9 @@ export default {
       if (!confirm('确认退出登录？')) return
       localStorage.removeItem('token')
       localStorage.removeItem('username')
+      localStorage.removeItem('role')
       this.username = ''
+      this.role = ''
       location.hash = '#/login'
     },
     openPwd() { this.pwdErr = ''; this.pwdForm = { old_password: '', new_password: '', confirm: '' }; this.showPwd = true },

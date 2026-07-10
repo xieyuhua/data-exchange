@@ -23,6 +23,9 @@ type App struct {
 	Config       *SystemConfigService
 	Log          *ExportLogService
 	Dashboard    *DashboardService
+	User         *UserService
+	OpLog        *OperationLogService
+	TaskHistory  *SQLTaskHistoryService
 
 	// 执行引擎与调度
 	Executor  *TaskExecutor
@@ -43,6 +46,9 @@ func NewApp() *App {
 	cfgRepo := repository.NewSystemConfigRepo()
 	logRepo := repository.NewExportLogRepo()
 	statRepo := repository.NewStatRepo()
+	userRepo := repository.NewUserRepo()
+	opLogRepo := repository.NewOperationLogRepo()
+	taskHistoryRepo := repository.NewSQLTaskHistoryRepo()
 
 	// 2. 聚合根外壳（先建壳，便于业务服务反向引用 App 以获取配置/调度能力）
 	app := &App{ConfigRepo: cfgRepo}
@@ -51,11 +57,14 @@ func NewApp() *App {
 	app.Constant = NewConstantService(constantRepo)
 	app.DBConnection = NewDBConnectionService(dbConnRepo)
 	app.Vendor = NewVendorService(vendorRepo)
-	app.Task = NewSQLTaskService(app, taskRepo, dbConnRepo, ftpRepo, vendorRepo)
+	app.Task = NewSQLTaskService(app, taskRepo, dbConnRepo, ftpRepo, vendorRepo, taskHistoryRepo)
 	app.FTP = NewFTPAccountService(ftpRepo, vendorRepo)
 	app.Config = NewSystemConfigService(cfgRepo)
 	app.Log = NewExportLogService(logRepo, taskRepo, vendorRepo)
 	app.Dashboard = NewDashboardService(app, statRepo, taskRepo, vendorRepo)
+	app.User = NewUserService(userRepo)
+	app.OpLog = NewOperationLogService(opLogRepo)
+	app.TaskHistory = NewSQLTaskHistoryService(taskHistoryRepo, taskRepo)
 
 	// 4. 任务执行器（供 worker pool 与按名并发执行，反向引用 App 以获取配置/常量）
 	executor := NewTaskExecutor(app, taskRepo, vendorRepo, logRepo, ftpRepo)

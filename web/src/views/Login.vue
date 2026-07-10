@@ -28,6 +28,7 @@ export default {
         if (r.code === 0) {
           localStorage.setItem('token', r.data.token)
           localStorage.setItem('username', r.data.username)
+          localStorage.setItem('role', r.data.role || '')
           this.$router.replace(this.$route.query.redirect || '/')
         } else {
           this.err = r.message || '登录失败'

@@ -114,11 +114,12 @@ type TaskWithNames struct {
 
 // SQLTaskService SQL 任务业务
 type SQLTaskService struct {
-	app       *App
-	repo      *repository.SQLTaskRepo
-	dbRepo    *repository.DBConnectionRepo
-	ftpRepo   *repository.FTPAccountRepo
-	vendorRepo *repository.VendorRepo
+	app         *App
+	repo        *repository.SQLTaskRepo
+	dbRepo      *repository.DBConnectionRepo
+	ftpRepo     *repository.FTPAccountRepo
+	vendorRepo  *repository.VendorRepo
+	historyRepo *repository.SQLTaskHistoryRepo
 }
 
 // NewSQLTaskService 构建任务服务
@@ -128,8 +129,9 @@ func NewSQLTaskService(
 	dbRepo *repository.DBConnectionRepo,
 	ftpRepo *repository.FTPAccountRepo,
 	vendorRepo *repository.VendorRepo,
+	historyRepo *repository.SQLTaskHistoryRepo,
 ) *SQLTaskService {
-	return &SQLTaskService{app: app, repo: repo, dbRepo: dbRepo, ftpRepo: ftpRepo, vendorRepo: vendorRepo}
+	return &SQLTaskService{app: app, repo: repo, dbRepo: dbRepo, ftpRepo: ftpRepo, vendorRepo: vendorRepo, historyRepo: historyRepo}
 }
 
 // maxTasksPerVendor 读取每个厂家允许的最大任务数（来自系统配置，缺省为默认4）
@@ -164,8 +166,9 @@ func (s *SQLTaskService) Get(id int64) (*TaskWithNames, error) {
 	return &twn, nil
 }
 
-// Save 保存（新增/更新）任务，包含上限校验与调度注册
-func (s *SQLTaskService) Save(t *models.SQLTask) error {
+// Save 保存（新增/更新）任务，包含上限校验与调度注册。
+// changedBy 为当前操作用户名；更新时若 SQL 内容发生变化，会自动保存变更前的历史版本。
+func (s *SQLTaskService) Save(t *models.SQLTask, changedBy string) error {
 	if t.ID == 0 {
 		cnt, err := s.repo.CountByVendor(t.VendorID)
 		if err != nil {
@@ -183,6 +186,18 @@ func (s *SQLTaskService) Save(t *models.SQLTask) error {
 		}
 		return nil
 	}
+	// 更新前：如 SQL 内容发生变化，保存旧版本快照以便回溯/恢复
+	if old, err := s.repo.Get(t.ID); err == nil && s.historyRepo != nil {
+		if old.SQLContent != t.SQLContent {
+			_ = s.historyRepo.Create(&models.SQLTaskHistory{
+				TaskID:     old.ID,
+				TaskName:   old.TaskName,
+				SQLContent: old.SQLContent,
+				ChangedBy:  changedBy,
+				Remark:     "编辑保存前的版本",
+			})
+		}
+	}
 	if err := s.repo.Update(t); err != nil {
 		return err
 	}
@@ -193,9 +208,12 @@ func (s *SQLTaskService) Save(t *models.SQLTask) error {
 	return nil
 }
 
-// Delete 删除任务（并移除调度）
+// Delete 删除任务（并移除调度、级联清理历史版本）
 func (s *SQLTaskService) Delete(id int64) error {
 	s.app.RemoveTaskFromScheduler(id)
+	if s.historyRepo != nil {
+		_ = s.historyRepo.DeleteByTask(id)
+	}
 	return s.repo.Delete(id)
 }
 

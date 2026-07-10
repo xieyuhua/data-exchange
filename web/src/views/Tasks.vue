@@ -72,7 +72,7 @@ export default {
   data() {
     return {
       vendors: [], tasks: [], dbs: [], ftps: [], vendorId: '', maxTasks: 4,
-      statusFilter: '', keyword: '', running: [], pollTimer: null
+      statusFilter: '', keyword: '', running: [], pollTimer: null,
     }
   },
   inject: ['toast'],
@@ -151,7 +151,10 @@ export default {
       } else {
         this.toast(r.message, 'error')
       }
-    }
+    },
   }
 }
 </script>
+
+<style scoped>
+</style>

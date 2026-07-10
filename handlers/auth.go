@@ -49,11 +49,29 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
+	if user.Status == 0 {
+		fail(c, "账号已被禁用，请联系管理员")
+		return
+	}
+
 	token, err := generateToken(user.ID, user.Username, user.Role)
 	if err != nil {
 		fail(c, "生成令牌失败: "+err.Error())
 		return
 	}
+
+	// 记录登录操作日志（便于排查异常登录）
+	h.App.OpLog.Record(&models.OperationLog{
+		UserID:    user.ID,
+		Username:  user.Username,
+		Action:    "登录",
+		Module:    "账号",
+		Method:    "POST",
+		Path:      "/api/auth/login",
+		IP:        c.ClientIP(),
+		Success:   1,
+		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
+	})
 
 	success(c, gin.H{
 		"token":    token,

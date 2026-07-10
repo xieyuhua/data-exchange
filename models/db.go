@@ -83,6 +83,8 @@ func AutoMigrateAll() error {
 		&SystemConfig{},
 		&ExportLog{},
 		&User{},
+		&OperationLog{},
+		&SQLTaskHistory{},
 	); err != nil {
 		return err
 	}

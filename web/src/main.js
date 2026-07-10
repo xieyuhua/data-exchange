@@ -16,11 +16,15 @@ import Constants from './views/Constants.vue'
 import Configs from './views/Configs.vue'
 import Logs from './views/Logs.vue'
 import Files from './views/Files.vue'
+import Users from './views/Users.vue'
+import OperationLogs from './views/OperationLogs.vue'
+import ExcelSql from './views/ExcelSql.vue'
 
 const routes = [
   { path: '/login', name: 'login', component: Login, meta: { public: true } },
   { path: '/', name: 'dashboard', component: Dashboard, meta: { title: '仪表盘' } },
   { path: '/vendors', name: 'vendors', component: Vendors, meta: { title: '厂家管理' } },
+  { path: '/excel-sql', name: 'excel-sql', component: ExcelSql, meta: { title: 'Excel转SQL' } },
   { path: '/tasks', name: 'tasks', component: Tasks, meta: { title: 'SQL任务' } },
   { path: '/tasks/new', name: 'task-new', component: TaskForm, meta: { title: '新增任务' } },
   { path: '/tasks/edit/:id', name: 'task-edit', component: TaskForm, meta: { title: '编辑任务' } },
@@ -31,6 +35,9 @@ const routes = [
   { path: '/configs', name: 'configs', component: Configs, meta: { title: '系统配置' } },
   { path: '/logs', name: 'logs', component: Logs, meta: { title: '执行日志' } },
   { path: '/files', name: 'files', component: Files, meta: { title: '文件管理' } },
+  { path: '/users', name: 'users', component: Users, meta: { title: '用户管理', admin: true } },
+  { path: '/operation-logs', name: 'operation-logs', component: OperationLogs, meta: { title: '操作日志', admin: true } },
+  
 ]
 
 const router = createRouter({ history: createWebHashHistory(), routes })
@@ -42,8 +49,10 @@ router.beforeEach((to, from, next) => {
     if (token) next('/')
     else next()
   } else {
-    if (token) next()
-    else next({ path: '/login', query: { redirect: to.fullPath } })
+    if (!token) { next({ path: '/login', query: { redirect: to.fullPath } }); return }
+    // 管理员专属页面：非管理员重定向到首页
+    if (to.meta.admin && localStorage.getItem('role') !== 'admin') { next('/'); return }
+    next()
   }
 })
 

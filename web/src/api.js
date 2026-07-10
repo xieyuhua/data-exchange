@@ -38,6 +38,7 @@ api.interceptors.response.use(
 export default {
   get(url, params) { return api.get(url, { params }).then(r => r.data) },
   post(url, data) { return api.post(url, data).then(r => r.data) },
+  put(url, data) { return api.put(url, data).then(r => r.data) },
   del(url) { return api.delete(url).then(r => r.data) },
   // 文件下载：返回完整 axios 响应（responseType=blob），由调用方判断成功/错误
   file(url, params) { return api.get(url, { params, responseType: 'blob' }) },

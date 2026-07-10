@@ -69,6 +69,7 @@ func SetupRouter(staticFS embed.FS, app *services.App, webRoot string) *gin.Engi
 
 	api := r.Group("/api")
 	api.Use(AuthMiddleware())
+	api.Use(h.OperationLogMiddleware())
 	{
 		api.GET("/dashboard/stats", h.DashboardStats)
 
@@ -93,6 +94,8 @@ func SetupRouter(staticFS embed.FS, app *services.App, webRoot string) *gin.Engi
 		api.POST("/tasks", h.SaveSQLTask)
 		api.GET("/tasks/:id", h.GetSQLTask)
 		api.DELETE("/tasks/:id", h.DeleteSQLTask)
+		api.GET("/tasks/:id/history", h.ListSQLTaskHistory)
+		api.POST("/task-history/:hid/restore", h.RestoreSQLTaskHistory)
 		api.POST("/tasks/:id/toggle", h.ToggleSQLTask)
 		api.POST("/tasks/:id/execute", h.ExecuteTaskNow)
 		api.GET("/tasks/running", h.ListRunningTasks)
@@ -132,6 +135,22 @@ func SetupRouter(staticFS embed.FS, app *services.App, webRoot string) *gin.Engi
 
 		// 常量函数求值
 		api.POST("/constants/eval", h.EvalConstantFunc)
+
+		// 用户管理（仅管理员）
+		admin := api.Group("")
+		admin.Use(RequireAdmin())
+		{
+			admin.GET("/users", h.ListUsers)
+			admin.POST("/users", h.CreateUser)
+			admin.PUT("/users/:id", h.UpdateUser)
+			admin.POST("/users/:id/reset-password", h.ResetUserPassword)
+			admin.DELETE("/users/:id", h.DeleteUser)
+
+			// 操作日志（仅管理员可查看/清理）
+			admin.GET("/operation-logs", h.ListOperationLogs)
+			admin.DELETE("/operation-logs/:id", h.DeleteOperationLog)
+			admin.DELETE("/operation-logs", h.ClearOperationLogs)
+		}
 	}
 
 	r.NoRoute(func(c *gin.Context) {

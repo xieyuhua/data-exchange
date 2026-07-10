@@ -56,6 +56,11 @@ func (r *SQLTaskRepo) Delete(id int64) error {
 	return models.DB.Delete(&models.SQLTask{}, id).Error
 }
 
+// UpdateSQLContent 仅更新任务的 SQL 内容（供历史恢复使用）
+func (r *SQLTaskRepo) UpdateSQLContent(id int64, sqlContent string) error {
+	return models.DB.Model(&models.SQLTask{}).Where("id = ?", id).Update("sql_content", sqlContent).Error
+}
+
 // SetEnabled 设置任务启用状态
 func (r *SQLTaskRepo) SetEnabled(id int64, enabled int) error {
 	return models.DB.Model(&models.SQLTask{}).Where("id = ?", id).Update("enabled", enabled).Error

@@ -185,7 +185,7 @@ func (h *Handler) SaveSQLTask(c *gin.Context) {
 		fail(c, "参数错误: "+err.Error())
 		return
 	}
-	if err := h.App.Task.Save(&t); err != nil {
+	if err := h.App.Task.Save(&t, currentUsername(c)); err != nil {
 		fail(c, "保存任务失败: "+err.Error())
 		return
 	}
