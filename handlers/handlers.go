@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -369,6 +370,34 @@ func (h *Handler) DeleteFTPRemoteFile(c *gin.Context) {
 		return
 	}
 	success(c, nil)
+}
+
+// DownloadFTPRemoteFile 从远程下载文件并以流形式返回给浏览器
+func (h *Handler) DownloadFTPRemoteFile(c *gin.Context) {
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	acc, err := h.App.FTP.Get(id)
+	if err != nil {
+		fail(c, "账号不存在: "+err.Error())
+		return
+	}
+	name := c.Query("path")
+	if name == "" {
+		fail(c, "文件名不能为空")
+		return
+	}
+	dl, err := h.App.DownloadRemoteFile(acc, name)
+	if err != nil {
+		fail(c, "下载失败: "+err.Error())
+		return
+	}
+	defer dl.Close()
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filepath.Base(name)))
+	c.Header("Content-Type", "application/octet-stream")
+	if dl.Size > 0 {
+		c.Header("Content-Length", strconv.FormatInt(dl.Size, 10))
+	}
+	c.Status(http.StatusOK)
+	io.Copy(c.Writer, dl.Reader)
 }
 
 // UploadFTPRemoteFile 上传本地文件到远程目录

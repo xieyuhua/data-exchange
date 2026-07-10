@@ -110,6 +110,7 @@ func SetupRouter(staticFS embed.FS, app *services.App, webRoot string) *gin.Engi
 		api.GET("/ftp-accounts/:id/files", h.ListFTPRemoteFiles)
 		api.DELETE("/ftp-accounts/:id/files", h.DeleteFTPRemoteFile)
 		api.POST("/ftp-accounts/:id/files", h.UploadFTPRemoteFile)
+		api.GET("/ftp-accounts/:id/files/download", h.DownloadFTPRemoteFile)
 
 		// 系统配置
 		api.GET("/configs", h.ListSystemConfigs)

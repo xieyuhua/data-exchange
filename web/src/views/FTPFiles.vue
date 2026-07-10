@@ -42,7 +42,10 @@
               <td class="num-col">{{ f.is_dir ? '—' : formatSize(f.size) }}</td>
               <td class="cell-mono">{{ f.mod_time }}</td>
               <td><span class="type-badge" :class="f.is_dir ? 'dir' : 'file'">{{ f.is_dir ? '目录' : '文件' }}</span></td>
-              <td class="op-col"><button class="btn btn-danger btn-sm" @click="delFile(f.name)">删除</button></td>
+              <td class="op-col">
+                <button v-if="!f.is_dir" class="btn btn-sm" @click="downloadFile(f.name)">下载</button>
+                <button class="btn btn-danger btn-sm" @click="delFile(f.name)">删除</button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -130,6 +133,31 @@ export default {
       if (!confirm('确认删除远程文件 ' + name + '？')) return
       const r = await api.del('/ftp-accounts/' + this.accountId + '/files?path=' + encodeURIComponent(name))
       if (r.code === 0) { this.toast('已删除', 'success'); this.loadFiles() } else this.toast(r.message, 'error')
+    },
+    async downloadFile(name) {
+      try {
+        const resp = await api.file('/ftp-accounts/' + this.accountId + '/files/download', { path: name })
+        if (resp.status !== 200) { this.toast('下载失败', 'error'); return }
+        const blob = resp.data
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = name
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        this.toast('已开始下载 ' + name, 'success')
+      } catch (e) {
+        let msg = '下载失败'
+        if (e.response && e.response.data) {
+          try {
+            const reader = new FileReader()
+            reader.onload = () => { try { this.toast(JSON.parse(reader.result).message || msg, 'error') } catch { this.toast(msg, 'error') } }
+            reader.readAsText(e.response.data)
+            return
+          } catch { /* ignore */ }
+        }
+        this.toast(msg, 'error')
+      }
     },
     async onUpload(e) {
       const file = e.target.files[0]

@@ -143,6 +143,85 @@ func (a *App) UploadRemoteFile(acc *models.FTPAccount, localPath, remoteName str
 	}
 }
 
+// RemoteFileDownload 远程文件下载句柄：流读取器、大小与连接释放函数
+type RemoteFileDownload struct {
+	Reader io.ReadCloser
+	Size   int64
+	Close  func() error
+}
+
+// DownloadRemoteFile 从远程下载文件（name 为相对于 RemotePath 的名称），返回可读流
+// 调用方读取完成后必须调用 Close 释放底层连接
+func (a *App) DownloadRemoteFile(acc *models.FTPAccount, name string) (*RemoteFileDownload, error) {
+	target, err := resolveRemoteTarget(acc, name)
+	if err != nil {
+		return nil, err
+	}
+	switch acc.Protocol {
+	case "sftp":
+		return a.downloadSFTPFrom(acc, target)
+	case "ftp":
+		return a.downloadFTPFrom(acc, target)
+	default:
+		return nil, fmt.Errorf("不支持的协议: %s", acc.Protocol)
+	}
+}
+
+func (a *App) downloadSFTPFrom(acc *models.FTPAccount, target string) (*RemoteFileDownload, error) {
+	client, conn, err := dialSFTP(acc)
+	if err != nil {
+		return nil, err
+	}
+	remoteFile, err := client.Open(target)
+	if err != nil {
+		client.Close()
+		conn.Close()
+		return nil, fmt.Errorf("打开远程文件失败: %v", err)
+	}
+	size := int64(0)
+	if info, statErr := remoteFile.Stat(); statErr == nil {
+		size = info.Size()
+	}
+	closer := func() error {
+		remoteFile.Close()
+		client.Close()
+		conn.Close()
+		return nil
+	}
+	return &RemoteFileDownload{Reader: remoteFile, Size: size, Close: closer}, nil
+}
+
+func (a *App) downloadFTPFrom(acc *models.FTPAccount, target string) (*RemoteFileDownload, error) {
+	conn, err := ftp.Dial(fmt.Sprintf("%s:%d", acc.Host, acc.Port), ftp.DialWithTimeout(15*time.Second))
+	if err != nil {
+		return nil, fmt.Errorf("FTP连接失败: %v", err)
+	}
+	if err := conn.Login(acc.Username, acc.Password); err != nil {
+		conn.Quit()
+		return nil, fmt.Errorf("FTP登录失败: %v", err)
+	}
+	if err := conn.ChangeDir(acc.RemotePath); err != nil {
+		conn.Quit()
+		return nil, fmt.Errorf("切换远程目录失败: %v", err)
+	}
+	base := path.Base(target)
+	reader, err := conn.Retr(base)
+	if err != nil {
+		conn.Quit()
+		return nil, fmt.Errorf("读取远程文件失败: %v", err)
+	}
+	size := int64(0)
+	if sz, szErr := conn.FileSize(base); szErr == nil {
+		size = sz
+	}
+	closer := func() error {
+		reader.Close()
+		conn.Quit()
+		return nil
+	}
+	return &RemoteFileDownload{Reader: reader, Size: size, Close: closer}, nil
+}
+
 // ==================== SFTP 实现 ====================
 
 func (a *App) listSFTPFiles(acc *models.FTPAccount) ([]RemoteFileInfo, error) {
