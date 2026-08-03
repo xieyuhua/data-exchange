@@ -20,8 +20,8 @@ import (
 	"data-exchange/models"
 	"data-exchange/repository"
 
-	"github.com/jlaffaye/ftp"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/jlaffaye/ftp"
 	_ "github.com/lib/pq"
 	"github.com/pkg/sftp"
 	_ "github.com/sijms/go-ora/v2"
@@ -184,7 +184,8 @@ func (e *TaskExecutor) Execute(taskID int64) (*models.ExportLog, error) {
 		notifyFail(task.TaskName, vendor.Name, logEntry.ErrorMessage)
 		return logEntry, err
 	}
-	logEntry.CSVFilename = filepath.Base(csvPath)
+	// 存储相对 csv_output_dir 的路径（含厂家子目录），便于下载接口精确定位；兼容旧数据仅有文件名
+	logEntry.CSVFilename = relCSVPath(csvPath, e.app.GetConfigWithDefault("csv_output_dir", "./output"))
 	logEntry.RecordCount = recordCount
 
 	if fileInfo, err := os.Stat(csvPath); err == nil {
@@ -904,6 +905,19 @@ func (e *TaskExecutor) testSQLExecution(dbConnID int64, sqlContent string, limit
 }
 
 // ==================== CSV生成（App 工具方法） ====================
+
+// relCSVPath 计算 csvPath 相对 csv_output_dir 的路径；无法计算时回退为文件名
+func relCSVPath(csvPath, outputDir string) string {
+	absOut, errOut := filepath.Abs(outputDir)
+	absFile, errFile := filepath.Abs(csvPath)
+	if errOut == nil && errFile == nil {
+		rel, err := filepath.Rel(absOut, absFile)
+		if err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return filepath.Base(csvPath)
+}
 
 // GenerateFileName 根据模板与厂家/任务信息生成文件名
 func (a *App) GenerateFileName(template, vendorCode, taskName string) string {

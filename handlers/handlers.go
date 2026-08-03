@@ -549,6 +549,69 @@ func collectFileInfos(entries []os.DirEntry) []FileInfo {
 	return list
 }
 
+// collectFileInfosRecursive 递归收集目录（含子目录）下的文件信息，Name 为相对 root 的路径
+func collectFileInfosRecursive(root string) []FileInfo {
+	var list []FileInfo
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, rerr := filepath.Rel(root, path)
+		if rerr != nil {
+			return nil
+		}
+		fi := FileInfo{Name: filepath.ToSlash(rel)}
+		fi.Size = info.Size()
+		fi.ModTime = info.ModTime().Format("2006-01-02 15:04:05")
+		list = append(list, fi)
+		return nil
+	})
+	return list
+}
+
+// resolveSafePath 在 baseDir 下安全拼接相对路径 filename（可含子目录），返回绝对路径；
+// 若路径越界或目标不存在则返回空字符串。
+func resolveSafePath(baseDir, filename string) string {
+	filename = filepath.Clean(filename)
+	if filename == "." || filename == "" {
+		return ""
+	}
+	absBase, errBase := filepath.Abs(baseDir)
+	filePath := filepath.Join(baseDir, filename)
+	absFile, errFile := filepath.Abs(filePath)
+	if errBase != nil || errFile != nil || absFile != absBase &&
+		!strings.HasPrefix(absFile, absBase+string(os.PathSeparator)) {
+		return ""
+	}
+	if _, err := os.Stat(filePath); err != nil {
+		return ""
+	}
+	return filePath
+}
+
+// searchFileByName 在 baseDir 下递归查找与目标文件名匹配的文件，返回第一个匹配项的路径；
+// 找不到返回空字符串。
+func searchFileByName(baseDir, name string) string {
+	if name == "" || name == "." {
+		return ""
+	}
+	var found string
+	_ = filepath.Walk(baseDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() && info.Name() == name && found == "" {
+			found = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
+}
+
 // paginateFiles 对内存文件列表做分页，返回当前页与总记录数
 func paginateFiles(list []FileInfo, page, pageSize int) ([]FileInfo, int64) {
 	if page < 1 {
@@ -571,16 +634,7 @@ func paginateFiles(list []FileInfo, page, pageSize int) ([]FileInfo, int64) {
 
 func (h *Handler) ListOutputFiles(c *gin.Context) {
 	outputDir := h.App.GetConfigWithDefault("csv_output_dir", "./output")
-	files, err := os.ReadDir(outputDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			successWithTotal(c, []FileInfo{}, 0)
-			return
-		}
-		fail(c, "读取目录失败: "+err.Error())
-		return
-	}
-	list := collectFileInfos(files)
+	list := collectFileInfosRecursive(outputDir)
 	if list == nil {
 		list = []FileInfo{}
 	}
@@ -605,18 +659,17 @@ func (h *Handler) DownloadFile(c *gin.Context) {
 		fail(c, "文件名不能为空")
 		return
 	}
-	filename = filepath.Base(filename)
-	if filename == "." || filename == string(os.PathSeparator) {
-		fail(c, "非法文件名")
-		return
+
+	// 1) 优先按传入的相对路径（可能含厂家子目录，如 ABC_3/order.csv）定位
+	filePath := resolveSafePath(baseDir, filename)
+
+	// 2) 直接路径不存在时，用文件名在子目录中递归搜索（兼容旧日志仅存文件名的数据）
+	if filePath == "" {
+		filePath = searchFileByName(baseDir, filepath.Base(filename))
 	}
 
-	filePath := filepath.Join(baseDir, filename)
-
-	absBase, errBase := filepath.Abs(baseDir)
-	absFile, errFile := filepath.Abs(filePath)
-	if errBase != nil || errFile != nil || !strings.HasPrefix(absFile, absBase+string(os.PathSeparator)) && absFile != absBase {
-		fail(c, "非法路径")
+	if filePath == "" {
+		fail(c, "文件不存在")
 		return
 	}
 
@@ -646,9 +699,10 @@ func (h *Handler) DownloadFile(c *gin.Context) {
 	}
 
 	c.Header("Content-Type", "application/octet-stream")
-	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(filename))
+	downloadName := filepath.Base(filename)
+	c.Header("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(downloadName))
 	c.Header("Content-Length", strconv.FormatInt(info.Size(), 10))
-	http.ServeContent(c.Writer, c.Request, filename, info.ModTime(), f)
+	http.ServeContent(c.Writer, c.Request, downloadName, info.ModTime(), f)
 }
 
 func (h *Handler) ListBackupFiles(c *gin.Context) {
