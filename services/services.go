@@ -690,8 +690,12 @@ func (e *TaskExecutor) executeSQLAndGenerateCSV(task *models.SQLTask, vendor *mo
 		statements = []string{sqlContent}
 	}
 
+	// 按厂家独立目录保存，避免不同厂家生成同名 CSV 相互覆盖导致数据错乱
 	outputDir := e.app.GetConfigWithDefault("csv_output_dir", "./output")
-	os.MkdirAll(outputDir, 0755)
+	outputDir = filepath.Join(outputDir, fmt.Sprintf("%s_%d", vendor.Code, vendor.ID))
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return "", 0, fmt.Errorf("创建厂家目录失败: %v", err)
+	}
 	fileName := e.app.GenerateFileName(task.CSVFilenameTemplate, vendor.Code, task.TaskName)
 	if !strings.HasSuffix(fileName, ".csv") {
 		fileName += ".csv"
